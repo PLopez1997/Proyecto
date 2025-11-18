@@ -3,10 +3,10 @@ import os
 import streamlit as st
 
 # Obtener las credenciales de las variables de entorno (seguridad)
-host = os.getenv("DB_HOST", "be5bmntqvmjb45dbc68h-mysql.services.clever-cloud.com")
-user = os.getenv("DB_USER", "ufrsewvahgrdaghy")
-password = os.getenv("DB_PASSWORD", "UxDnJbPxibZaLwBC6Xt1")
-database = os.getenv("DB_NAME", "be5bmntqvmjb45dbc68h")
+host = os.getenv("DB_HOST", "bofs0tswlhkcaaow8a72-mysql.services.clever-cloud.com")
+user = os.getenv("DB_USER", "unjjfykaw275rydj")
+password = os.getenv("DB_PASSWORD", "7DzfZb9rZr3VIJdX92DP")
+database = os.getenv("DB_NAME", "bofs0tswlhkcaaow8a72")
 
 # Intentar establecer la conexión
 try:
