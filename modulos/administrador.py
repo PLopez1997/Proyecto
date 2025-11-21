@@ -7,7 +7,7 @@ import uuid # Para generar IDs anónimos si fuera necesario
 # Importación Confirmada por el Usuario: Asume que app.py carga el módulo correctamente
 # Esta importación debe ser relativa si administrador.py está en una carpeta, pero la mantengo
 # como la última que funcionó, asumiendo que el entorno de ejecución lo resuelve.
-from config.conexion import obtener_conexion 
+from .config.conexion import obtener_conexion 
 
 # --- Funciones Auxiliares para Datos de Referencia ---
 
