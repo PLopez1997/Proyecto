@@ -4,7 +4,7 @@ import sys
 import os
 
 #CODIGOS
-from conexion import obtener_conexion () 
+from conexion import obtener_conexion
 
 def junta_directiva_page():
     st.write("Contenido exclusivo para Junta Directiva.")
