@@ -6,7 +6,7 @@ def junta_directiva_page():
 
 #COMIENZA EL CODIGO
 import pandas as pd
-from conexion import create_connection # Importamos tu función de conexión existente
+from conexion import connector.connect # Importamos tu función de conexión existente
 
 def show_directiva_dashboard():
     st.title("Panel de Control - Directiva")
@@ -73,7 +73,7 @@ def gestionar_miembros():
 # --- FUNCIONES SQL ---
 
 def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
-    conn = create_connection()
+    conn = connector.connect()
     if conn:
         try:
             cursor = conn.cursor()
@@ -97,7 +97,7 @@ def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
             conn.close()
 
 def listar_miembros():
-    conn = create_connection()
+    conn = connector.connect()
     if conn:
         try:
             # Consultamos los miembros del grupo actual
@@ -114,3 +114,6 @@ def listar_miembros():
             st.error(f"Error al cargar miembros: {e}")
         finally:
             conn.close()
+
+#connector.connect
+#create_connection
