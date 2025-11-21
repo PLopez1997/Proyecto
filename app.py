@@ -16,7 +16,7 @@ if st.session_state.get("sesion_iniciada"):
 
     elif Rol == "administrador":
         from modulos.administrador import administrador_page
-        mostrar_administrador()
+        mostrar_administrador_page()
 
     elif Rol == "miembro":
         from modulos.miembro import miembro_page
