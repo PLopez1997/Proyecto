@@ -41,7 +41,16 @@ def gestionar_miembros():
                 telefono = st.text_input("Teléfono")
                 direccion = st.text_input("Dirección")
                 
-                rol_id = st.selectbox("Asignar Rol", [1, 2, 3], format_func=lambda x: "Miembro" if x==3 else ("Presidente" if x==1 else "Tesorero"))
+               # Definimos los roles claramente: 1:Pres, 2:Tes, 3:Miembro, 4:Sec
+            rol_id = st.selectbox(
+                "Asignar Rol", 
+                options=[1, 2, 4, 3], # El orden aquí define el orden en la lista desplegable
+                format_func=lambda x: {
+                    1: "Presidente", 
+                    2: "Tesorero", 
+                    3: "Miembro", 
+                        4: "Secretario"
+                    }.get(x, "Desconocido"))
             
             submitted = st.form_submit_button("Guardar Miembro")
             
