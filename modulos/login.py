@@ -1,6 +1,5 @@
 import streamlit as st
 from modulos.config.conexion import obtener_conexion
-from modulos.venta import mostrar_venta
 
 def verificar_usuario(Usuario, Contraseña, Rol):
     con = obtener_conexion()
@@ -13,16 +12,15 @@ def verificar_usuario(Usuario, Contraseña, Rol):
     try:
         cursor = con.cursor()
 
-        query = (
-            "SELECT Usuario, Contraseña, Rol "
-            "FROM Login WHERE Usuario = %s AND Contraseña = %s AND Rol = %s"
-        )
+        query = """
+            SELECT Usuario, Contraseña, Rol 
+            FROM Login WHERE Usuario = %s AND Contraseña = %s AND Rol = %s
+        """
         cursor.execute(query, (Usuario, Contraseña, Rol))
         result = cursor.fetchone()
 
         if result:
-            # devolver el rol del usuario
-            return result[2]
+            return result[2]  # rol
         else:
             return None
 
@@ -36,12 +34,10 @@ def login():
     if st.session_state.get("conexion_exitosa"):
         st.success("✅ Conexión a la base de datos establecida correctamente.")
 
-    Usuario = st.text_input("Usuario", key="Usuario_input")
-    Contraseña = st.text_input("Contraseña", type="password", key="Contraseña_input")
-
-    # ahora sí creamos la variable Rol
+    Usuario = st.text_input("Usuario")
+    Contraseña = st.text_input("Contraseña", type="password")
     Roles = ["administrador", "promotora", "miembro", "junta directiva"]
-    Rol = st.selectbox("Rol", Roles, key="rol_input")
+    Rol = st.selectbox("Rol", Roles)
 
     if st.button("Iniciar sesión"):
         tipo = verificar_usuario(Usuario, Contraseña, Rol)
@@ -50,10 +46,6 @@ def login():
             st.session_state["Usuario"] = Usuario
             st.session_state["tipo_usuario"] = tipo
             st.session_state["sesion_iniciada"] = True
-
-            st.success(f"Bienvenido {Usuario} ({tipo}) 👋")
             st.rerun()
         else:
             st.error("❌ Credenciales o rol incorrectos.")
-
-
