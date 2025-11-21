@@ -10,9 +10,6 @@ import pandas as pd
 import sys
 import os
 
-# Aseguramos que Python encuentre el archivo conexion.py en la carpeta principal
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-
 # --- AQUÍ ESTABA EL ERROR: Usamos el nombre real de tu función ---
 from conexion import get_connection 
 
