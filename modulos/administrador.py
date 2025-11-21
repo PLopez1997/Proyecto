@@ -20,7 +20,7 @@ def fetch_referencia_data():
             # Trae todos los datos necesarios para las FKs y la asignación de usuarios
             distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
             ciclos = pd.read_sql("SELECT Id_ciclo FROM Ciclo", conn)
-            return {"distritos": distritos, "ciclos": ciclos, "grupos": grupos}
+            return {"distritos": distritos, "ciclos": ciclos,}
         except Exception as e:
             st.warning(f"No se pudieron cargar datos de referencia (Distrito/Ciclo/Grupo). Error: {e}")
         finally:
@@ -30,7 +30,6 @@ def fetch_referencia_data():
     return {
         "distritos": pd.DataFrame({"Id_distrito": [1, 2], "Nombre": ["Central", "Norte"]}),
         "ciclos": pd.DataFrame({"Id_ciclo": [1, 2, 3], "Nombre": ["Ciclo 2025-I", "Ciclo 2025-II", "Ciclo 2026-I"]}),
-        "grupos": pd.DataFrame({"Id_grupo": [101, 102], "Nombre": ["G-Paz", "G-Sol"]})
     }
 
 # --- 1. GESTIÓN DE USUARIOS ---
