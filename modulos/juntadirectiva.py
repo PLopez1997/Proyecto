@@ -1,9 +1,5 @@
 import streamlit as st
 
-def junta_directiva_page():
-    st.title("Panel de Junta Directiva")
-    st.write("Contenido exclusivo para Junta Directiva.")
-
 #COMIENZA EL CODIGO
 import pandas as pd
 import sys
@@ -14,7 +10,9 @@ import os
 
 from conexion import   get_connection() 
 
-def show_directiva_dashboard():
+def junta_directiva_page():
+    st.title("Panel de Junta Directiva")
+    st.write("Contenido exclusivo para Junta Directiva.")
     st.title("Panel de Control - Directiva")
     st.markdown("---")
 
