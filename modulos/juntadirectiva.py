@@ -4,7 +4,7 @@ import sys
 import os
 
 #CODIGOS
-from conexion import   get_connection() 
+from conexion import   obtener_conexion () 
 
 def junta_directiva_page():
     st.title("Panel de Junta Directiva")
@@ -65,7 +65,7 @@ def gestionar_miembros():
 
 def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
     # Usamos   get_connection() aquí
-    conn =   get_connection()
+    conn =   obtener_conexion ()
     if conn:
         try:
             cursor = conn.cursor()
@@ -88,7 +88,7 @@ def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
 
 def listar_miembros():
     # Usamos get_connection() aquí también
-    conn =   get_connection()
+    conn =   obtener_conexion ()
     if conn:
         try:
             grupo_id = st.session_state.get('grupo_id', 1)
