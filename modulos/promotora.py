@@ -9,11 +9,15 @@ def promotora_page():
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils.db_manager import (
+
+from modulos.config.conexion import (
     fetch_data, 
-    get_promotora_districts, get_groups_by_district, 
-    get_group_financial_summary, get_members_summary_by_group 
-) # Importa tus funciones de MySQL
+    execute_query, 
+    get_promotora_districts, 
+    get_groups_by_district,
+    get_group_financial_summary, 
+    get_members_summary_by_group 
+)
 
 # --- 1. Funciones de Vistas (Detalle del Contenido) ---
 
