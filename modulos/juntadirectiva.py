@@ -1,13 +1,8 @@
 import streamlit as st
 import pandas as pd
-import sys
-import os
-
-#CODIGOS
 from .config.conexion import obtener_conexion 
 
 def junta_directiva_page():
-    st.write("Contenido exclusivo para Junta Directiva.")
     st.title("Panel de Control - Directiva")
     st.markdown("---")
 
@@ -38,20 +33,23 @@ def gestionar_miembros():
         with st.form("form_nuevo_miembro"):
             col1, col2 = st.columns(2)
             with col1:
+                # Mantenemos inputs separados para mejor experiencia de usuario
                 nombre = st.text_input("Nombre")
                 apellido = st.text_input("Apellido")
                 dui = st.text_input("DUI (Documento Único)")
             with col2:
                 telefono = st.text_input("Teléfono")
                 direccion = st.text_input("Dirección")
-                # Ajusta los IDs de rol según tu tabla Roles en la BD
+                
                 rol_id = st.selectbox("Asignar Rol", [1, 2, 3], format_func=lambda x: "Miembro" if x==3 else ("Presidente" if x==1 else "Tesorero"))
             
             submitted = st.form_submit_button("Guardar Miembro")
             
             if submitted:
                 if nombre and apellido and dui:
-                    guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id)
+                    # AQUI CONCATENAMOS NOMBRE Y APELLIDO
+                    nombre_completo = f"{nombre} {apellido}"
+                    guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id)
                 else:
                     st.error("Por favor llene los campos obligatorios.")
 
@@ -62,23 +60,26 @@ def gestionar_miembros():
 
 # --- FUNCIONES SQL ---
 
-def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
-    # Usamos   get_connection() aquí
-    conn =   obtener_conexion ()
+def guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id):
+    conn = obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
             grupo_id = st.session_state.get('grupo_id', 1) 
             
+            # CAMBIOS REALIZADOS:
+            # 1. Tabla: Miembro (singular)
+            # 2. Columna `DUI/Identificación` con comillas invertidas (backticks) por tener el símbolo "/"
+            # 3. Solo pasamos 'Nombre', ya no 'Apellido'
             query = """
-                INSERT INTO Miembro (Nombre, Apellido, DUI, Telefono, Direccion, ID_Rol, ID_Grupo)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO Miembro (Nombre, `DUI/Identificación`, Telefono, Direccion, ID_Rol, ID_Grupo)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
-            valores = (nombre, apellido, dui, telefono, direccion, rol_id, grupo_id)
+            valores = (nombre_completo, dui, telefono, direccion, rol_id, grupo_id)
             
             cursor.execute(query, valores)
             conn.commit()
-            st.success(f"Miembro {nombre} {apellido} registrado exitosamente.")
+            st.success(f"Miembro {nombre_completo} registrado exitosamente.")
         except Exception as e:
             st.error(f"Error al guardar en BD: {e}")
         finally:
@@ -86,12 +87,15 @@ def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
             conn.close()
 
 def listar_miembros():
-    # Usamos get_connection() aquí también
-    conn =   obtener_conexion ()
+    conn = obtener_conexion()
     if conn:
         try:
             grupo_id = st.session_state.get('grupo_id', 1)
-            query = "SELECT ID_Miembro, Nombre, Apellido, DUI, Telefono, ID_Rol FROM Miembros WHERE ID_Grupo = %s"
+            
+            # CAMBIOS REALIZADOS:
+            # 1. Tabla: Miembro
+            # 2. Columna `DUI/Identificación`
+            query = "SELECT ID_Miembro, Nombre, `DUI/Identificación`, Telefono, ID_Rol FROM Miembro WHERE ID_Grupo = %s"
             
             df = pd.read_sql(query, conn, params=(grupo_id,))
             
@@ -103,4 +107,3 @@ def listar_miembros():
             st.error(f"Error al cargar miembros: {e}")
         finally:
             conn.close()
-#obtener_conexion
