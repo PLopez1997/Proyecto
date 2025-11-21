@@ -11,7 +11,7 @@ if st.session_state.get("sesion_iniciada"):
         promotora_page()
 
     elif Rol == "junta directiva":
-        from modulos.junta_directiva import juntadirectiva_page
+        from modulos.juntadirectiva import juntadirectiva_page
         juntadirectiva_page()
 
     elif Rol == "administrador":
