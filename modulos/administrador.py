@@ -19,8 +19,9 @@ def fetch_referencia_data():
         try:
             # Trae todos los datos necesarios para las FKs y la asignación de usuarios
             distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
-            ciclos = pd.read_sql("SELECT Id_ciclo FROM Ciclo", conn)
-            return {"distritos": distritos, "ciclos": ciclos,}
+            ciclos = pd.read_sql("SELECT Id_ciclo, Nombre FROM Ciclo", conn)
+            grupos = pd.read_sql("SELECT Id_grupo, Nombre FROM Grupo", conn)
+            return {"distritos": distritos, "ciclos": ciclos, "grupos": grupos}
         except Exception as e:
             st.warning(f"No se pudieron cargar datos de referencia (Distrito/Ciclo/Grupo). Error: {e}")
         finally:
@@ -30,6 +31,7 @@ def fetch_referencia_data():
     return {
         "distritos": pd.DataFrame({"Id_distrito": [1, 2], "Nombre": ["Central", "Norte"]}),
         "ciclos": pd.DataFrame({"Id_ciclo": [1, 2, 3], "Nombre": ["Ciclo 2025-I", "Ciclo 2025-II", "Ciclo 2026-I"]}),
+        "grupos": pd.DataFrame({"Id_grupo": [101, 102], "Nombre": ["G-Paz", "G-Sol"]})
     }
 
 # --- 1. GESTIÓN DE USUARIOS ---
@@ -85,7 +87,7 @@ def create_user_form(ref_data):
                     cursor = con.cursor()
                     # ASUME que tienes una tabla llamada 'Login' o 'Usuario' con estas columnas
                     sql = """
-                    INSERT INTO Login (Usuario, Contraseña, Rol, Id_referencia)
+                    INSERT INTO Login (Usuario, Contrasena_Hash, Rol, Id_referencia)
                     VALUES (%s, %s, %s, %s)
                     """
                     # Nota: Id_referencia puede ser NULL, por eso se pasa directamente
