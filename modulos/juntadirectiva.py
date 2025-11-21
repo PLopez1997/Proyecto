@@ -1,13 +1,9 @@
 import streamlit as st
-
-#COMIENZA EL CODIGO
 import pandas as pd
 import sys
 import os
 
-# --- AQUÍ ESTABA EL ERROR: Usamos el nombre real de tu función ---
-#Aqui no hay nada 
-
+#CODIGOS
 from conexion import   get_connection() 
 
 def junta_directiva_page():
