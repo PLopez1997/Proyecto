@@ -15,7 +15,7 @@ if st.session_state.get("sesion_iniciada"):
         junta_directiva_page()
 
     elif Rol == "administrador":
-        from modulos.administrador import mostrar_administrador
+        from modulos.administrador import administrador_page
         mostrar_administrador()
 
     elif Rol == "miembro":
