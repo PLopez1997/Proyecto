@@ -1,131 +1,107 @@
-# administrador.py
-
 import streamlit as st
+from modulos.config.conexion import obtener_conexion
 import pandas as pd
-from utils.db_manager import (
-    get_global_kpis, 
-    get_all_districts, add_district, delete_district,
-    get_all_promotoras, add_promotora, delete_promotora
-)
-
-def show_administrador_dashboard():
-    """
-    Muestra el panel de control y las funcionalidades para el Administrador.
-    """
-    st.title("🛡️ Panel de Control General del Sistema SGI")
-    st.write("Vista de alto nivel y gestión de la estructura organizativa (Distritos y Promotoras).")
-
-    st.markdown("---")
-
-    # --- 1. Key Performance Indicators (KPIs) Globales ---
-    st.header("Estadísticas Globales")
-    
-    kpis = get_global_kpis()
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(label="Total Grupos Activos", value=kpis['total_grupos'])
-    with col2:
-        st.metric(label="Miembros Registrados", value=kpis['total_miembros'])
-    with col3:
-        st.metric(label="Préstamos en Cartera", value=kpis['prestamos_activos'])
-    with col4:
-        st.metric(label="Utilidades Totales Históricas", value=f"${kpis['utilidades_totales']:,.2f}")
-    
-    st.markdown("---")
-
-    # --- 2. Funcionalidades de Gestión ---
-    tab1, tab2 = st.tabs(["🗺️ Gestión de Distritos", "👤 Gestión de Promotoras"])
-
-    with tab1:
-        manage_districts_view()
-    
-    with tab2:
-        manage_promotoras_view()
 
 
-def manage_districts_view():
-    """Vista para la gestión de la tabla Distrito."""
-    st.subheader("Administración de Distritos")
+# PANEL DEL ADMINISTRADOR
 
-    # Mostrar todos los distritos
-    districts_df = get_all_districts()
-    if not districts_df.empty:
-        st.dataframe(districts_df, use_container_width=True)
-    else:
-        st.info("No hay distritos registrados.")
+def administrador_page():
+    st.title("Panel de Control - Administrador")
 
-    # Formulario para Añadir Distrito
-    st.markdown("#### Añadir Nuevo Distrito")
-    with st.form("add_district_form", clear_on_submit=True):
-        new_district_name = st.text_input("Nombre del Nuevo Distrito", max_chars=100)
-        submitted = st.form_submit_button("Registrar Distrito")
-        
-        if submitted and new_district_name:
-            if add_district(new_district_name):
-                st.success(f"Distrito '{new_district_name}' registrado con éxito.")
-                st.experimental_rerun()
-            else:
-                st.error("Fallo al registrar el distrito.")
+    tabs = st.tabs(["📍 Distritos (Grupos)", "👤 Registrar Usuarios"])
 
-    # Formulario para Eliminar Distrito
-    st.markdown("#### Eliminar Distrito")
-    if not districts_df.empty:
-        district_ids = districts_df['ID_Distrito'].tolist()
-        district_to_delete = st.selectbox("Seleccione el ID del Distrito a eliminar:", district_ids)
-        if st.button("Eliminar Distrito Seleccionado", help="¡Precaución! Esto debe ser manejado con cuidado debido a las relaciones con Grupo y Promotora."):
-            # Una eliminación en cascada o una verificación de dependencias es necesaria aquí.
-            if delete_district(district_to_delete):
-                st.success(f"Distrito ID {district_to_delete} eliminado con éxito.")
-                st.experimental_rerun()
-            else:
-                st.error("Fallo al eliminar el distrito. Revise si hay grupos o promotoras asignadas.")
+    with tabs[0]:
+        panel_grupos()
+
+    with tabs[1]:
+        panel_usuarios()
 
 
-def manage_promotoras_view():
-    """Vista para la gestión de la tabla Promotora."""
-    st.subheader("Administración de Promotoras")
+# ============================================
+# SECCIÓN 1: GESTIÓN DE GRUPOS
+# ============================================
 
-    # Obtener listado de Promotoras con su Distrito
-    promotoras_df = get_all_promotoras()
-    if not promotoras_df.empty:
-        st.dataframe(promotoras_df, use_container_width=True)
-    else:
-        st.info("No hay promotoras registradas.")
+def panel_grupos():
+    st.subheader("📌 Gestión de Distritos (Tabla: grupos)")
 
-    # Obtener distritos para el selector
-    districts_df = get_all_districts()
-    district_options = dict(zip(districts_df['ID_Distrito'], districts_df['Nombre']))
-    
-    # Formulario para Añadir Promotora
-    st.markdown("#### Añadir Nueva Promotora")
-    with st.form("add_promotora_form", clear_on_submit=True):
-        p_nombre = st.text_input("Nombre de la Promotora")
-        p_contacto = st.text_input("Información de Contacto")
-        p_distrito_id = st.selectbox("Distrito Asignado", options=district_options.keys(), format_func=lambda x: district_options[x] if x in district_options else "Seleccione Distrito")
-        
-        submitted = st.form_submit_button("Registrar Promotora")
+    con = obtener_conexion()
+    cursor = con.cursor()
 
-        if submitted and p_nombre and p_distrito_id:
-            if add_promotora(p_nombre, p_contacto, p_distrito_id):
-                st.success(f"Promotora '{p_nombre}' registrada y asignada a {district_options[p_distrito_id]}.")
-                st.experimental_rerun()
-            else:
-                st.error("Fallo al registrar la promotora.")
+    # Mostrar datos existentes
+    cursor.execute("SELECT * FROM grupos")
+    data = cursor.fetchall()
+    columnas = [i[0] for i in cursor.description]
 
-    # Formulario para Eliminar Promotora
-    st.markdown("#### Eliminar Promotora")
-    if not promotoras_df.empty:
-        promotora_ids = promotoras_df['ID_Promotora'].tolist()
-        promotora_to_delete = st.selectbox("Seleccione el ID de la Promotora a eliminar:", promotora_ids)
-        if st.button("Eliminar Promotora Seleccionada"):
-            if delete_promotora(promotora_to_delete):
-                st.success(f"Promotora ID {promotora_to_delete} eliminada con éxito.")
-                st.experimental_rerun()
-            else:
-                st.error("Fallo al eliminar la promotora.")
-        con.close()
+    df = pd.DataFrame(data, columns=columnas)
+    st.dataframe(df, use_container_width=True)
 
-        st.success("Usuario registrado correctamente.")
+    st.divider()
+    st.subheader("➕ Agregar nuevo distrito")
+
+    nombre_nuevo = st.text_input("Nombre del distrito", key="add_nombre")
+    fecha_inicio_nueva = st.date_input("Fecha de inicio", key="add_fecha_inicio")
+    id_ciclo_nuevo = st.number_input("ID Ciclo", min_value=1, step=1, key="add_id_ciclo")
+    tasa_interes_nueva = st.number_input("Tasa de interés (%)", key="add_tasa_interes")
+    tipo_multa_nuevo = st.text_input("Tipo de multa", key="add_tipo_multa")
+    regla_interna_nueva = st.text_area("Regla interna", key="add_regla_interna")
+
+    if st.button("Registrar nuevo distrito"):
+        query = """
+            INSERT INTO grupos (Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cursor.execute(query, (nombre_nuevo, fecha_inicio_nueva, id_ciclo_nuevo, tasa_interes_nueva, tipo_multa_nuevo, regla_interna_nueva))
+        con.commit()
+        st.success("Distrito registrado correctamente.")
         st.rerun()
+
+    st.divider()
+    st.subheader("✏️ Editar Distrito Existente")
+
+    # Asegurarse de que df no esté vacío y contenga 'id_grupo'
+    if not df.empty and "id_grupo" in df.columns:
+        id_editar = st.selectbox("Selecciona un ID a editar", df["id_grupo"].tolist())
+    else:
+        id_editar = None
+        st.info("No hay distritos disponibles para editar o la columna 'id_grupo' no existe.")
+
+    if id_editar:
+        # Cargar datos del distrito seleccionado
+        cursor.execute("SELECT Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna FROM grupos WHERE id_grupo = %s", (id_editar,))
+        distrito_actual = cursor.fetchone()
+
+        if distrito_actual:
+            # Mostrar campos pre-rellenados para edición
+            nombre_actual, fecha_inicio_actual, id_ciclo_actual, tasa_interes_actual, tipo_multa_actual, regla_interna_actual = distrito_actual
+
+            st.write(f"Editando el distrito con ID: **{id_editar}**")
+
+            # Convertir la fecha de inicio a datetime.date si es de otro tipo (ej. datetime.datetime)
+            if isinstance(fecha_inicio_actual, pd.Timestamp):
+                fecha_inicio_actual = fecha_inicio_actual.date()
+            elif isinstance(fecha_inicio_actual, str):
+                 fecha_inicio_actual = pd.to_datetime(fecha_inicio_actual).date()
+
+            edited_nombre = st.text_input("Nombre del distrito", value=nombre_actual, key=f"edit_nombre_{id_editar}")
+            edited_fecha_inicio = st.date_input("Fecha de inicio", value=fecha_inicio_actual, key=f"edit_fecha_inicio_{id_editar}")
+            edited_id_ciclo = st.number_input("ID Ciclo", min_value=1, step=1, value=id_ciclo_actual, key=f"edit_id_ciclo_{id_editar}")
+            edited_tasa_interes = st.number_input("Tasa de interés (%)", value=tasa_interes_actual, key=f"edit_tasa_interes_{id_editar}")
+            edited_tipo_multa = st.text_input("Tipo de multa", value=tipo_multa_actual, key=f"edit_tipo_multa_{id_editar}")
+            edited_regla_interna = st.text_area("Regla interna", value=regla_interna_actual, key=f"edit_regla_interna_{id_editar}")
+
+            if st.button("Guardar cambios"):
+                update_query = """
+                    UPDATE grupos
+                    SET Nombre = %s, Fecha_inicio = %s, Id_ciclo = %s, Tasa_interes = %s, Tipo_multa = %s, Regla_interna = %s
+                    WHERE id_grupo = %s
+                """
+                cursor.execute(update_query, (
+                    edited_nombre, edited_fecha_inicio, edited_id_ciclo,
+                    edited_tasa_interes, edited_tipo_multa, edited_regla_interna,
+                    id_editar
+                ))
+                con.commit()
+                st.success(f"Distrito con ID {id_editar} actualizado correctamente.")
+                st.rerun()
+
+    con.close()
