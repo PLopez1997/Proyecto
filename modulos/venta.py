@@ -1,106 +1,130 @@
+# administrador.py
+
 import streamlit as st
-from modulos.config.conexion import obtener_conexion
 import pandas as pd
+from utils.db_manager import (
+    get_global_kpis, 
+    get_all_districts, add_district, delete_district,
+    get_all_promotoras, add_promotora, delete_promotora
+)
 
-# ============================================
-# PANEL DEL ADMINISTRADOR
-# ============================================
+def show_administrador_dashboard():
+    """
+    Muestra el panel de control y las funcionalidades para el Administrador.
+    """
+    st.title("🛡️ Panel de Control General del Sistema SGI")
+    st.write("Vista de alto nivel y gestión de la estructura organizativa (Distritos y Promotoras).")
 
-def administrador_page():
-    st.title("Panel de Control - Administrador")
+    st.markdown("---")
 
-    tabs = st.tabs(["📍 Distritos (Grupos)", "👤 Registrar Usuarios"])
+    # --- 1. Key Performance Indicators (KPIs) Globales ---
+    st.header("Estadísticas Globales")
+    
+    kpis = get_global_kpis()
 
-    with tabs[0]:
-        panel_grupos()
+    col1, col2, col3, col4 = st.columns(4)
 
-    with tabs[1]:
-        panel_usuarios()
+    with col1:
+        st.metric(label="Total Grupos Activos", value=kpis['total_grupos'])
+    with col2:
+        st.metric(label="Miembros Registrados", value=kpis['total_miembros'])
+    with col3:
+        st.metric(label="Préstamos en Cartera", value=kpis['prestamos_activos'])
+    with col4:
+        st.metric(label="Utilidades Totales Históricas", value=f"${kpis['utilidades_totales']:,.2f}")
+    
+    st.markdown("---")
 
+    # --- 2. Funcionalidades de Gestión ---
+    tab1, tab2 = st.tabs(["🗺️ Gestión de Distritos", "👤 Gestión de Promotoras"])
 
-# ============================================
-# SECCIÓN 1: GESTIÓN DE GRUPOS
-# ============================================
-
-def panel_grupos():
-    st.subheader("📌 Gestión de Distritos (Tabla: grupos)")
-
-    con = obtener_conexion()
-    cursor = con.cursor()
-
-    # Mostrar datos existentes
-    cursor.execute("SELECT * FROM grupos")
-    data = cursor.fetchall()
-    columnas = [i[0] for i in cursor.description]
-
-    df = pd.DataFrame(data, columns=columnas)
-    st.dataframe(df, use_container_width=True)
-
-    st.divider()
-    st.subheader("➕ Agregar nuevo distrito")
-
-    nombre = st.text_input("Nombre del distrito")
-    fecha_inicio = st.date_input("Fecha de inicio")
-    id_ciclo = st.number_input("ID Ciclo", min_value=1, step=1)
-    tasa_interes = st.number_input("Tasa de interés (%)")
-    tipo_multa = st.text_input("Tipo de multa")
-    regla_interna = st.text_area("Regla interna")
-
-    if st.button("Registrar nuevo distrito"):
-        query = """
-            INSERT INTO grupos (Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        cursor.execute(query, (nombre, fecha_inicio, id_ciclo, tasa_interes, tipo_multa, regla_interna))
-        con.commit()
-        st.success("Distrito registrado correctamente.")
-        st.rerun()
-
-    st.divider()
-    st.subheader("✏️ Editar Distrito Existente")
-
-    id_editar = st.selectbox("Selecciona un ID a editar", df["Id_cliente"] if "Id_cliente" in df else [])
-
-    if id_editar:
-        nuevo_nombre = st.text_input("Nuevo nombre")
-        nuevo_tasa = st.number_input("Nueva tasa de interés", min_value=0.0)
-        nuevo_multa = st.text_input("Nuevo tipo de multa")
-
-        if st.button("Actualizar información"):
-            query = """
-                UPDATE grupos SET Nombre=%s, Tasa_interes=%s, Tipo_multa=%s
-                WHERE Id_cliente=%s
-            """
-            cursor.execute(query, (nuevo_nombre, nuevo_tasa, nuevo_multa, id_editar))
-            con.commit()
-            st.success("Distrito actualizado.")
-            st.rerun()
-
-    con.close()
+    with tab1:
+        manage_districts_view()
+    
+    with tab2:
+        manage_promotoras_view()
 
 
-# ============================================
-# SECCIÓN 2: REGISTRO DE USUARIOS
-# ============================================
+def manage_districts_view():
+    """Vista para la gestión de la tabla Distrito."""
+    st.subheader("Administración de Distritos")
 
-def panel_usuarios():
-    st.subheader("👤 Registrar nuevo usuario")
+    # Mostrar todos los distritos
+    districts_df = get_all_districts()
+    if not districts_df.empty:
+        st.dataframe(districts_df, use_container_width=True)
+    else:
+        st.info("No hay distritos registrados.")
 
-    usuario = st.text_input("Usuario")
-    contraseña = st.text_input("Contraseña", type="password")
-    roles = ["administrador", "promotora", "miembro", "junta directiva"]
-    rol = st.selectbox("Rol", roles)
+    # Formulario para Añadir Distrito
+    st.markdown("#### Añadir Nuevo Distrito")
+    with st.form("add_district_form", clear_on_submit=True):
+        new_district_name = st.text_input("Nombre del Nuevo Distrito", max_chars=100)
+        submitted = st.form_submit_button("Registrar Distrito")
+        
+        if submitted and new_district_name:
+            if add_district(new_district_name):
+                st.success(f"Distrito '{new_district_name}' registrado con éxito.")
+                st.experimental_rerun()
+            else:
+                st.error("Fallo al registrar el distrito.")
 
-    if st.button("Registrar usuario"):
-        con = obtener_conexion()
-        cursor = con.cursor()
+    # Formulario para Eliminar Distrito
+    st.markdown("#### Eliminar Distrito")
+    if not districts_df.empty:
+        district_ids = districts_df['ID_Distrito'].tolist()
+        district_to_delete = st.selectbox("Seleccione el ID del Distrito a eliminar:", district_ids)
+        if st.button("Eliminar Distrito Seleccionado", help="¡Precaución! Esto debe ser manejado con cuidado debido a las relaciones con Grupo y Promotora."):
+            # Una eliminación en cascada o una verificación de dependencias es necesaria aquí.
+            if delete_district(district_to_delete):
+                st.success(f"Distrito ID {district_to_delete} eliminado con éxito.")
+                st.experimental_rerun()
+            else:
+                st.error("Fallo al eliminar el distrito. Revise si hay grupos o promotoras asignadas.")
 
-        query = """
-            INSERT INTO login (Usuario, Contraseña, Rol)
-            VALUES (%s, %s, %s)
-        """
-        cursor.execute(query, (usuario, contraseña, rol))
-        con.commit()
+
+def manage_promotoras_view():
+    """Vista para la gestión de la tabla Promotora."""
+    st.subheader("Administración de Promotoras")
+
+    # Obtener listado de Promotoras con su Distrito
+    promotoras_df = get_all_promotoras()
+    if not promotoras_df.empty:
+        st.dataframe(promotoras_df, use_container_width=True)
+    else:
+        st.info("No hay promotoras registradas.")
+
+    # Obtener distritos para el selector
+    districts_df = get_all_districts()
+    district_options = dict(zip(districts_df['ID_Distrito'], districts_df['Nombre']))
+    
+    # Formulario para Añadir Promotora
+    st.markdown("#### Añadir Nueva Promotora")
+    with st.form("add_promotora_form", clear_on_submit=True):
+        p_nombre = st.text_input("Nombre de la Promotora")
+        p_contacto = st.text_input("Información de Contacto")
+        p_distrito_id = st.selectbox("Distrito Asignado", options=district_options.keys(), format_func=lambda x: district_options[x] if x in district_options else "Seleccione Distrito")
+        
+        submitted = st.form_submit_button("Registrar Promotora")
+
+        if submitted and p_nombre and p_distrito_id:
+            if add_promotora(p_nombre, p_contacto, p_distrito_id):
+                st.success(f"Promotora '{p_nombre}' registrada y asignada a {district_options[p_distrito_id]}.")
+                st.experimental_rerun()
+            else:
+                st.error("Fallo al registrar la promotora.")
+
+    # Formulario para Eliminar Promotora
+    st.markdown("#### Eliminar Promotora")
+    if not promotoras_df.empty:
+        promotora_ids = promotoras_df['ID_Promotora'].tolist()
+        promotora_to_delete = st.selectbox("Seleccione el ID de la Promotora a eliminar:", promotora_ids)
+        if st.button("Eliminar Promotora Seleccionada"):
+            if delete_promotora(promotora_to_delete):
+                st.success(f"Promotora ID {promotora_to_delete} eliminada con éxito.")
+                st.experimental_rerun()
+            else:
+                st.error("Fallo al eliminar la promotora.")
         con.close()
 
         st.success("Usuario registrado correctamente.")
