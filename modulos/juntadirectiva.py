@@ -6,7 +6,7 @@ def junta_directiva_page():
 
 #COMIENZA EL CODIGO
 import pandas as pd
-from conexion import connector.connect # Importamos tu función de conexión existente
+from conexion import connect # Importamos tu función de conexión existente
 
 def show_directiva_dashboard():
     st.title("Panel de Control - Directiva")
