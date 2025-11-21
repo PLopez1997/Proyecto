@@ -81,7 +81,7 @@ def guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id):
             # 2. Columna `DUI/Identificación` con comillas invertidas (backticks) por tener el símbolo "/"
             # 3. Solo pasamos 'Nombre', ya no 'Apellido'
             query = """
-                INSERT INTO Miembro (Nombre, `DUI/Identificación`, Telefono, Direccion, ID_Rol, ID_Grupo)
+                INSERT INTO Miembro (Nombre, `DUI/Identificación`, Telefono, Direccion, Rol, ID_Grupo)
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
             valores = (nombre_completo, dui, telefono, direccion, rol_id, grupo_id)
