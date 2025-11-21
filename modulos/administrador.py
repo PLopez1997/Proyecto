@@ -16,7 +16,7 @@ def fetch_referencia_data():
     if conn:
         try:
             distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
-            ciclos = pd.read_sql("SELECT Id_ciclo, Nombre FROM Ciclo", conn)
+            
             grupos = pd.read_sql("SELECT Id_grupo, Nombre FROM Grupo", conn)
             return {"distritos": distritos, "ciclos": ciclos, "grupos": grupos}
         except Exception as e:
