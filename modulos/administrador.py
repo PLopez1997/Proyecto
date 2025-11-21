@@ -3,7 +3,7 @@ import pandas as pd
 import mysql.connector
 
 # Importación Confirmada por el Usuario: Asume que app.py carga el módulo correctamente
-from ..config.conexion import obtener_conexion 
+from .modulos.config.conexion import obtener_conexion 
 
 # --- Funciones Auxiliares para Datos de Referencia ---
 
