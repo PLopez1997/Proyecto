@@ -1,9 +1,3 @@
-# modulos/venta.py
-import streamlit as st
-def mostrar_venta():
- # Aquí se muestra "Hola Mundo"
- st.title("Administrador")
- st.write("Este es el entorno del administrador")
 import streamlit as st
 from modulos.config.conexion import obtener_conexion
 import pandas as pd
