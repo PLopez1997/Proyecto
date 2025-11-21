@@ -4,7 +4,8 @@ def junta_directiva_page():
     st.title("Panel de Junta Directiva")
     st.write("Contenido exclusivo para Junta Directiva.")
 
-import streamlit as st
+
+#COMIENZA EL CODIGO
 import pandas as pd
 import sys
 import os
