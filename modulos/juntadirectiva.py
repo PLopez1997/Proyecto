@@ -71,7 +71,7 @@ def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
             grupo_id = st.session_state.get('grupo_id', 1) 
             
             query = """
-                INSERT INTO Miembros (Nombre, Apellido, DUI, Telefono, Direccion, ID_Rol, ID_Grupo)
+                INSERT INTO Miembro (Nombre, Apellido, DUI, Telefono, Direccion, ID_Rol, ID_Grupo)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             valores = (nombre, apellido, dui, telefono, direccion, rol_id, grupo_id)
