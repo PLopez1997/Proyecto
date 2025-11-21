@@ -13,7 +13,7 @@ import os
 # --- AQUÍ ESTABA EL ERROR: Usamos el nombre real de tu función ---
 #Aqui no hay nada 
 
-from conexion import get_connection 
+from conexion import  obtener_conexion() 
 
 def show_directiva_dashboard():
     st.title("Panel de Control - Directiva")
@@ -71,8 +71,8 @@ def gestionar_miembros():
 # --- FUNCIONES SQL ---
 
 def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
-    # Usamos get_connection() aquí
-    conn = get_connection() 
+    # Usamos  obtener_conexion() aquí
+    conn =  obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
@@ -95,7 +95,7 @@ def guardar_miembro_bd(nombre, apellido, dui, telefono, direccion, rol_id):
 
 def listar_miembros():
     # Usamos get_connection() aquí también
-    conn = get_connection()
+    conn =  obtener_conexion()
     if conn:
         try:
             grupo_id = st.session_state.get('grupo_id', 1)
