@@ -1,13 +1,26 @@
-# app.py
 import streamlit as st
-from modulos.venta import mostrar_venta  # Importamos la función mostrar_venta del módulo venta
-from modulos.login import login
+from modulos.login import login  # tu función login
 
-# Comprobamos si la sesión ya está iniciada
-if "sesion_iniciada" in st.session_state and st.session_state["sesion_iniciada"]:
-    # Si la sesión está iniciada, mostrar el contenido de ventas
-    mostrar_venta()
+# --- CONTROL PRINCIPAL ---
+if st.session_state.get("sesion_iniciada"):
+
+    Rol = st.session_state.get("tipo_usuario")
+
+    if Rol == "promotora":
+        from modulos.promotora import promotora_page
+        promotora_page()
+
+    elif Rol == "junta directiva":
+        from modulos.junta_directiva import junta_directiva_page
+        junta_directiva_page()
+
+    elif Rol == "administrador":
+        from modulos.venta import mostrar_venta
+        mostrar_venta()
+
+    elif Rol == "miembro":
+        from modulos.miembro import miembro_page
+        miembro_page()
+
 else:
-    # Si la sesión no está iniciada, mostrar el login
     login()
-
