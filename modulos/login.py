@@ -49,3 +49,24 @@ def login():
             st.rerun()
         else:
             st.error("❌ Credenciales o rol incorrectos.")
+
+
+#CODIGOS EXTRA
+
+
+# ... dentro del if del botón de login ...
+
+
+usuario_validado = validar_usuario(user_input, password_input)
+
+if usuario_validado:
+    # GUARDAMOS EN LA SESIÓN (LA "MOCHILA")
+    st.session_state['logged_in'] = True
+    st.session_state['user_id'] = usuario_validado['Id_usuario']
+    st.session_state['user_role'] = usuario_validado['Rol'] # Ej: 1 (Presidente)
+    
+    # AQUÍ ESTÁ LA MAGIA DEL FILTRO POR GRUPO
+    st.session_state['grupo_id'] = usuario_validado['Id_grupo'] 
+    
+    st.success("Login exitoso")
+    st.rerun() # Recarga la página para que app.py lea los nuevos estados
