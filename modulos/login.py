@@ -46,20 +46,18 @@ def login():
             st.session_state["Usuario"] = Usuario
             st.session_state["tipo_usuario"] = tipo
             st.session_state["sesion_iniciada"] = True
-              
-           
-# AQUÍ ESTÁ LA MAGIA DEL FILTRO POR GRUPO
-            st.session_state['Id_grupo'] = usuario_validado['Id_grupo'] 
-    
-            st.success("Login exitoso")
-        
-#CODIGOS EXTRA
-
-
-            
             st.rerun()
         else:
             st.error("❌ Credenciales o rol incorrectos.")
+
+
+if usuario_validado:
+    st.session_state['user_role'] = usuario_validado['Rol']
+    
+    # Guardamos ambos. Si el usuario es Directiva, distrito será None, y viceversa.
+    
+    st.session_state['grupo_id'] = usuario_validado['Id_grupo']
+    st.session_state['distrito_id'] = usuario_validado['Id_distrito']
 
 
 
