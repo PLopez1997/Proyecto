@@ -104,7 +104,7 @@ def listar_miembros():
             # CAMBIOS REALIZADOS:
             # 1. Tabla: Miembro
             # 2. Columna `DUI/Identificación`
-            query = "SELECT ID_Miembro, Nombre, `DUI/Identificación`, Telefono, ID_Rol FROM Miembro WHERE ID_Grupo = %s"
+            query = "SELECT Id_Miembro, Nombre, `DUI/Identificación`, Telefono, Rol FROM Miembro WHERE Id_grupo = %s"
             
             df = pd.read_sql(query, conn, params=(grupo_id,))
             
