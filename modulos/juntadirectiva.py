@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from .config.conexion import obtener_conexion 
 
+st.title("PANEL DE PRUEBA 123")
+
 def junta_directiva_page():
     st.title("Panel de Control - Directiva")
     st.markdown("---")
