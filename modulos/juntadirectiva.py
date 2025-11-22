@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 from .config.conexion import obtener_conexion 
 
-st.title("PANEL DE PRUEBA 123")
-
 def junta_directiva_page():
     st.title("Panel de Control - Directiva")
     st.markdown("---")
@@ -228,7 +226,7 @@ def gestionar_reuniones():
                         for m in miembros:
                             c1, c2 = st.columns([3, 2])
                             with c1:
-                                st.write(f"👤 **{m['Nombre']}** (DUI: {m['DUI/Identificación']})")
+                                st.write(f"👤 **{m['Nombre']}")
                             with c2:
                                 # Radio button para seleccionar estado
                                 estado = st.radio(
