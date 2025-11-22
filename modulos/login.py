@@ -8,10 +8,12 @@ def verificar_usuario(Usuario, Contraseña, Rol):
         return None
 
     try:
-        # Usamos dictionary=True para manejar los datos ordenadamente
+        # CAMBIO 1: Usamos dictionary=True para acceder a los datos por nombre
         cursor = con.cursor(dictionary=True)
 
-        # IMPORTANTE: Pedimos las columnas Id_grupo y Id_distrito
+        # CAMBIO 2: Pedimos también el Id_grupo y Id_distrito en la consulta
+        # Nota: Asegúrate que tu tabla se llame 'Usuario' o 'Login' según corresponda en tu BD.
+        # Aquí asumo que las columnas Id_grupo y Id_distrito YA EXISTEN en esa tabla.
         query = """
             SELECT Usuario, Rol, Id_grupo, Id_distrito 
             FROM Login 
@@ -20,8 +22,10 @@ def verificar_usuario(Usuario, Contraseña, Rol):
         cursor.execute(query, (Usuario, Contraseña, Rol))
         result = cursor.fetchone()
 
-        # Retornamos TODA la fila (el diccionario completo)
-        return result 
+        if result:
+            return result  # Devolvemos TODA la fila (diccionario completo)
+        else:
+            return None
 
     except Exception as e:
         st.error(f"Error en la consulta: {e}")
@@ -30,28 +34,36 @@ def verificar_usuario(Usuario, Contraseña, Rol):
         if con.is_connected():
             con.close()
 
-def login_page():
-    st.title("Inicio de sesión - GAPC")
+def login():
+    st.title("Inicio de sesión")
 
+    # Inputs del usuario
     Usuario = st.text_input("Usuario")
     Contraseña = st.text_input("Contraseña", type="password")
-    Roles = ["administrador", "promotora", "miembro", "junta directiva"] # Asegúrate que coincidan con tu BD
+    Roles = ["administrador", "promotora", "miembro", "junta directiva"]
     Rol = st.selectbox("Rol", Roles)
 
     if st.button("Iniciar sesión"):
-        user_data = verificar_usuario(Usuario, Contraseña, Rol)
+        # Llamamos a la función
+        usuario_validado = verificar_usuario(Usuario, Contraseña, Rol)
 
-        if user_data:
-            # --- GUARDAR SESIÓN (Llave maestra: 'logged_in') ---
-            st.session_state['logged_in'] = True
-            st.session_state['user_role'] = user_data['Rol']
-            st.session_state['user_name'] = user_data['Usuario']
+        if usuario_validado:
+            # --- CAMBIO 3: Aquí adentro va la lógica de sesión ---
             
-            # Guardamos el alcance (Grupo o Distrito) usando .get() para evitar errores si es nulo
-            st.session_state['grupo_id'] = user_data.get('Id_grupo')
-            st.session_state['distrito_id'] = user_data.get('Id_distrito')
+            st.success(f"Bienvenido {usuario_validado['Usuario']}")
             
-            st.success("¡Bienvenido! Redirigiendo...")
-            st.rerun() # Recarga la página para que app.py tome el control
+            # Guardamos las variables críticas en la sesión
+            st.session_state["logged_in"] = True
+            st.session_state["Usuario"] = usuario_validado['Usuario']
+            st.session_state["user_role"] = usuario_validado['Rol']
+            
+            # Guardamos los IDs de alcance (Grupo o Distrito)
+            # .get() evita errores si la columna viene vacía (None)
+            st.session_state['grupo_id'] = usuario_validado.get('Id_grupo')
+            st.session_state['distrito_id'] = usuario_validado.get('Id_distrito')
+            
+            st.rerun() # Recargamos para ir a la página principal
         else:
-            st.error("❌ Credenciales incorrectas o rol no coincide.")
+            st.error("❌ Credenciales o rol incorrectos.")
+
+# Esta parte final ya no es necesaria aquí porque la metimos dentro del 'if st.button'
