@@ -99,24 +99,26 @@ def listar_miembros():
     conn = obtener_conexion()
     if conn:
         try:
+            # Usamos .get() por seguridad
             grupo_id = st.session_state.get('grupo_id')
             
-            # Consultamos los datos
-            query = "SELECT Id_Miembro, Nombre, `DUI/Identificación`, Telefono, Rol FROM Miembro WHERE Id_grupo = %s"
+            # CORRECCIÓN DE NOMBRES DE COLUMNAS AQUÍ:
+            # Usamos Id_miembro, Rol y Id_grupo
+            query = "SELECT Id_miembro, Nombre, `DUI/Identificación`, Telefono, Rol FROM Miembro WHERE Id_grupo = %s"
+            
             df = pd.read_sql(query, conn, params=(grupo_id,))
             
             if not df.empty:
-                # 1. MOSTRAR LA TABLA
                 st.dataframe(df, use_container_width=True)
                 
                 st.markdown("---")
                 
-                # 2. SECCIÓN DE ELIMINAR (Zona de peligro)
+                # SECCIÓN DE ELIMINAR
                 with st.expander("🗑️ Eliminar Miembro", expanded=False):
                     st.warning("⚠️ Cuidado: Esta acción no se puede deshacer.")
                     
-                    # Creamos un diccionario para el selectbox: {ID: "Nombre - DUI"}
-                    # Esto facilita buscar al usuario por nombre en la lista
+                    # CORRECCIÓN AQUÍ TAMBIÉN:
+                    # Python debe buscar 'Id_miembro' (tal como viene del SQL)
                     lista_miembros = {
                         row['Id_miembro']: f"{row['Nombre']} - {row['DUI/Identificación']}" 
                         for index, row in df.iterrows()
@@ -125,7 +127,6 @@ def listar_miembros():
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
-                        # El usuario selecciona visualmente el nombre, pero el código captura el ID
                         id_a_eliminar = st.selectbox(
                             "Seleccione el miembro a eliminar:", 
                             options=lista_miembros.keys(),
@@ -133,11 +134,11 @@ def listar_miembros():
                         )
                     
                     with col2:
-                        st.write("") # Espacio para alinear el botón
+                        st.write("") 
                         st.write("") 
                         if st.button("Eliminar Permanentemente", type="primary"):
                             eliminar_miembro_bd(id_a_eliminar)
-                            st.rerun() # Recargamos la página para ver la tabla actualizada
+                            st.rerun()
                             
             else:
                 st.info("No hay miembros registrados en este grupo aún.")
@@ -147,24 +148,22 @@ def listar_miembros():
         finally:
             conn.close()
 
-def eliminar_miembro_bd(Id_miembro):
+def eliminar_miembro_bd(id_miembro):
     conn = obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
             
-            # SQL para borrar
+            # CORRECCIÓN AQUÍ: Id_miembro
             query = "DELETE FROM Miembro WHERE Id_miembro = %s"
-            cursor.execute(query, (Id_miembro,))
+            cursor.execute(query, (id_miembro,))
             conn.commit()
             
-            st.toast("✅ Miembro eliminado correctamente.") # st.toast es un mensaje flotante elegante
+            st.toast("✅ Miembro eliminado correctamente.")
             
         except Exception as e:
-            # Capturamos el error común de llaves foráneas
-            # (Si intentas borrar a alguien que ya tiene ahorros o préstamos)
             if "1451" in str(e): 
-                st.error("⛔ No puedes eliminar a este miembro porque ya tiene registros asociados (Ahorros o Préstamos).")
+                st.error("⛔ No puedes eliminar a este miembro porque ya tiene registros asociados.")
             else:
                 st.error(f"Error al eliminar: {e}")
         finally:
