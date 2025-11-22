@@ -102,7 +102,7 @@ def listar_miembros():
             grupo_id = st.session_state.get('grupo_id')
             
             # Consultamos los datos
-            query = "SELECT ID_Miembro, Nombre, `DUI/Identificación`, Telefono, ID_Rol FROM Miembro WHERE ID_Grupo = %s"
+            query = "SELECT Id_Miembro, Nombre, `DUI/Identificación`, Telefono, Rol FROM Miembro WHERE Id_grupo = %s"
             df = pd.read_sql(query, conn, params=(grupo_id,))
             
             if not df.empty:
@@ -118,7 +118,7 @@ def listar_miembros():
                     # Creamos un diccionario para el selectbox: {ID: "Nombre - DUI"}
                     # Esto facilita buscar al usuario por nombre en la lista
                     lista_miembros = {
-                        row['ID_Miembro']: f"{row['Nombre']} - {row['DUI/Identificación']}" 
+                        row['Id_miembro']: f"{row['Nombre']} - {row['DUI/Identificación']}" 
                         for index, row in df.iterrows()
                     }
                     
@@ -154,7 +154,7 @@ def eliminar_miembro_bd(id_miembro):
             cursor = conn.cursor()
             
             # SQL para borrar
-            query = "DELETE FROM Miembro WHERE ID_Miembro = %s"
+            query = "DELETE FROM Miembro WHERE Id_miembro = %s"
             cursor.execute(query, (id_miembro,))
             conn.commit()
             
