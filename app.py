@@ -6,7 +6,7 @@ from modulos.login import login  # función login
 # ---- CONTROL PRINCIPAL -----
 
 # Verificar si ya existe una sesión iniciada
-sesion = st.session_state.get("sesion_iniciada"):
+if st.session_state.get("sesion_iniciada"):
 
     Rol = st.session_state.get("tipo_usuario")
 
