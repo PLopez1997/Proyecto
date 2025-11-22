@@ -147,7 +147,7 @@ def listar_miembros():
         finally:
             conn.close()
 
-def eliminar_miembro_bd(id_miembro):
+def eliminar_miembro_bd(Id_miembro):
     conn = obtener_conexion()
     if conn:
         try:
@@ -155,7 +155,7 @@ def eliminar_miembro_bd(id_miembro):
             
             # SQL para borrar
             query = "DELETE FROM Miembro WHERE Id_miembro = %s"
-            cursor.execute(query, (id_miembro,))
+            cursor.execute(query, (Id_miembro,))
             conn.commit()
             
             st.toast("✅ Miembro eliminado correctamente.") # st.toast es un mensaje flotante elegante
