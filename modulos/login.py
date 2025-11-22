@@ -49,7 +49,7 @@ def login():
               
            
 # AQUÍ ESTÁ LA MAGIA DEL FILTRO POR GRUPO
-            st.session_state['grupo_id'] = usuario_validado['Id_grupo'] 
+            st.session_state['id_grupo'] = usuario_validado['Id_grupo'] 
     
             st.success("Login exitoso")
         
