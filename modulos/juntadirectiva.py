@@ -174,81 +174,126 @@ def eliminar_miembro_bd(id_miembro):
 
 
 def gestionar_reuniones():
-    st.header("Gestión de Reuniones y Asistencia")
-    tab1, tab2 = st.tabs(["📅 Programar Nueva Reunión", "📝 Tomar Asistencia"])
+    st.header("Gestión Operativa de Reuniones")
+    
+    # AHORA TENEMOS 3 PESTAÑAS
+    tab1, tab2, tab3 = st.tabs(["📅 1. Programar", "📝 2. Asistencia", "💰 3. Registrar Ahorros"])
 
-    # --- PESTAÑA 1: CREAR REUNIÓN ---
+    # --- PESTAÑA 1: CREAR (Igual que antes) ---
     with tab1:
-        st.subheader("Crear registro de reunión")
+        st.subheader("Crear nueva reunión")
         with st.form("form_reunion"):
             col1, col2 = st.columns(2)
             with col1:
-                fecha = st.date_input("Fecha de la reunión")
+                fecha = st.date_input("Fecha")
             with col2:
-                # Nota: El usuario pidió atributo 'tema' en minúscula
-                tema_reunion = st.text_input("Tema principal")
+                tema = st.text_input("Tema")
             
-            submit = st.form_submit_button("Crear Reunión")
-            
-            if submit:
-                if tema_reunion:
-                    crear_reunion_bd(fecha, tema_reunion)
-                else:
-                    st.warning("El tema es obligatorio.")
+            if st.form_submit_button("Crear Reunión"):
+                crear_reunion_bd(fecha, tema)
 
-    # --- PESTAÑA 2: ASISTENCIA ---
+    # --- PESTAÑA 2: ASISTENCIA (Igual que antes) ---
     with tab2:
-        st.subheader("Registro de Asistencia")
-        
-        # 1. Obtener reuniones disponibles del grupo
+        st.subheader("Tomar Asistencia")
         reuniones = obtener_reuniones_del_grupo()
-        
         if reuniones:
-            # Selector de reunión: Muestra "Fecha - Tema" pero devuelve el ID
-            reunion_seleccionada = st.selectbox(
-                "Seleccione la reunión:",
-                options=reuniones, # Lista de diccionarios
-                format_func=lambda x: f"{x['Fecha']} - {x['tema']}"
-            )
+            reunion_sel = st.selectbox("Seleccione Reunión para Asistencia:", options=reuniones, format_func=lambda x: f"{x['Fecha']} - {x['tema']}", key="sel_asist")
             
-            if reunion_seleccionada:
-                st.markdown(f"**Pasando lista para:** {reunion_seleccionada['tema']}")
-                st.markdown("---")
-                
-                # 2. Obtener miembros para armar la lista
+            if reunion_sel:
                 miembros = obtener_lista_miembros_simple()
-                
                 if miembros:
                     with st.form("form_asistencia"):
-                        datos_asistencia = {} # Diccionario para guardar el estado de cada uno
-                        
-                        # Creamos una fila por miembro
+                        datos_asistencia = {}
+                        st.write("Marque el estado de los miembros:")
                         for m in miembros:
                             c1, c2 = st.columns([3, 2])
                             with c1:
-                                st.write(f"👤 **{m['Nombre']}")
+                                st.write(f"👤 {m['Nombre']}")
                             with c2:
-                                # Radio button para seleccionar estado
-                                estado = st.radio(
-                                    f"Estado {m['Id_miembro']}", 
-                                    ["Presente", "Ausente", "Excusado"], 
-                                    key=f"radio_{m['Id_miembro']}",
-                                    horizontal=True,
-                                    label_visibility="collapsed"
-                                )
+                                estado = st.radio("Estado", ["Presente", "Ausente", "Excusado"], key=f"asist_{m['Id_miembro']}", label_visibility="collapsed", horizontal=True)
                                 datos_asistencia[m['Id_miembro']] = estado
                         
-                        st.markdown("---")
-                        guardar_btn = st.form_submit_button("💾 Guardar Asistencia")
-                        
-                        if guardar_btn:
-                            guardar_asistencia_bd(reunion_seleccionada['Id_reunion'], datos_asistencia)
-                else:
-                    st.warning("No hay miembros registrados para tomar asistencia.")
+                        if st.form_submit_button("Guardar Asistencia"):
+                            guardar_asistencia_bd(reunion_sel['Id_reunion'], datos_asistencia)
         else:
-            st.info("No hay reuniones registradas. Ve a la pestaña 'Programar Nueva Reunión' primero.")
+            st.info("No hay reuniones creadas.")
 
+    # --- PESTAÑA 3: AHORROS (NUEVO) ---
+    with tab3:
+        st.subheader("Registro de Ahorros por Reunión")
+        
+        reuniones_ahorro = obtener_reuniones_del_grupo()
+        
+        if reuniones_ahorro:
+            # Seleccionamos la reunión donde está entrando el dinero
+            reunion_ahorro_sel = st.selectbox("Seleccione Reunión:", options=reuniones_ahorro, format_func=lambda x: f"{x['Fecha']} - {x['tema']}", key="sel_ahorro")
+            
+            st.markdown("---")
+            
+            # Formulario para registrar ahorro INDIVIDUAL
+            # (Hacerlo uno por uno es más seguro para manejar dinero)
+            col_izq, col_der = st.columns(2)
+            
+            with col_izq:
+                miembros = obtener_lista_miembros_simple()
+                # Diccionario para buscar fácil
+                dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
+                
+                miembro_ahorrador = st.selectbox("Miembro que ahorra:", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
+                
+            with col_der:
+                monto = st.number_input("Monto a Ahorrar ($)", min_value=0.0, step=0.01)
+            
+            if st.button("Registrar Ahorro", type="primary"):
+                guardar_ahorro_bd(reunion_ahorro_sel['Id_reunion'], miembro_ahorrador, monto)
+                
+            # --- VISTA RÁPIDA DE LO AHORRADO EN ESTA REUNIÓN ---
+            st.markdown("#### 📊 Resumen de esta reunión")
+            ver_ahorros_reunion(reunion_ahorro_sel['Id_reunion'])
+            
+        else:
+            st.info("Primero debe crear una reunión.")
 
+# --- AGREGAR ESTAS FUNCIONES AL FINAL (SECCIÓN SQL) ---
+
+def guardar_ahorro_bd(id_reunion, id_miembro, monto):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Insertamos el ahorro vinculándolo a la reunión
+            query = "INSERT INTO Ahorro (Id_reunion, Id_miembro, Monto, Fecha) VALUES (%s, %s, %s, NOW())"
+            cursor.execute(query, (id_reunion, id_miembro, monto))
+            conn.commit()
+            st.success(f"Ahorro de ${monto} registrado correctamente.")
+        except Exception as e:
+            st.error(f"Error al guardar ahorro: {e}")
+        finally:
+            conn.close()
+
+def ver_ahorros_reunion(id_reunion):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            # Consulta con JOIN para ver el nombre del miembro
+            query = """
+                SELECT m.Nombre, a.Monto, a.Fecha 
+                FROM Ahorro a
+                JOIN Miembro m ON a.Id_miembro = m.Id_miembro
+                WHERE a.Id_reunion = %s
+                ORDER BY a.id_ahorro DESC
+            """
+            df = pd.read_sql(query, conn, params=(id_reunion,))
+            
+            if not df.empty:
+                st.dataframe(df, use_container_width=True)
+                total = df['Monto'].sum()
+                st.metric("Total Recaudado hoy", f"${total:,.2f}")
+            else:
+                st.info("Aún no hay ahorros registrados en esta sesión.")
+        finally:
+            conn.close()
+            
 def crear_reunion_bd(fecha, tema):
     conn = obtener_conexion()
     if conn:
