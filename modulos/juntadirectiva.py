@@ -120,7 +120,7 @@ def listar_miembros():
                     # CORRECCIÓN AQUÍ TAMBIÉN:
                     # Python debe buscar 'Id_miembro' (tal como viene del SQL)
                     lista_miembros = {
-                        row['Id_miembro']: f"{row['Nombre']} - {row['DUI/Identificación']}" 
+                        row['Id_miembro']: f"{row['Nombre']} - {row["Rol"]}" 
                         for index, row in df.iterrows()
                     }
                     
