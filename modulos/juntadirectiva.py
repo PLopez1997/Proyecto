@@ -11,9 +11,9 @@ def junta_directiva_page():
 
     if choice == "Gestionar Miembros":
         gestionar_miembros()
-    
+
     elif choice == "Gestionar Reuniones":
-        st.info("Módulo de Reuniones en construcción.")
+        gestionar_reuniones()
         
     elif choice == "Caja y Préstamos":
         st.info("Módulo de Caja en construcción.")
@@ -168,4 +168,160 @@ def eliminar_miembro_bd(id_miembro):
                 st.error(f"Error al eliminar: {e}")
         finally:
             cursor.close()
+            conn.close()
+
+
+
+
+def gestionar_reuniones():
+    st.header("Gestión de Reuniones y Asistencia")
+    tab1, tab2 = st.tabs(["📅 Programar Nueva Reunión", "📝 Tomar Asistencia"])
+
+    # --- PESTAÑA 1: CREAR REUNIÓN ---
+    with tab1:
+        st.subheader("Crear registro de reunión")
+        with st.form("form_reunion"):
+            col1, col2 = st.columns(2)
+            with col1:
+                fecha = st.date_input("Fecha de la reunión")
+            with col2:
+                # Nota: El usuario pidió atributo 'tema' en minúscula
+                tema_reunion = st.text_input("Tema principal")
+            
+            submit = st.form_submit_button("Crear Reunión")
+            
+            if submit:
+                if tema_reunion:
+                    crear_reunion_bd(fecha, tema_reunion)
+                else:
+                    st.warning("El tema es obligatorio.")
+
+    # --- PESTAÑA 2: ASISTENCIA ---
+    with tab2:
+        st.subheader("Registro de Asistencia")
+        
+        # 1. Obtener reuniones disponibles del grupo
+        reuniones = obtener_reuniones_del_grupo()
+        
+        if reuniones:
+            # Selector de reunión: Muestra "Fecha - Tema" pero devuelve el ID
+            reunion_seleccionada = st.selectbox(
+                "Seleccione la reunión:",
+                options=reuniones, # Lista de diccionarios
+                format_func=lambda x: f"{x['Fecha']} - {x['tema']}"
+            )
+            
+            if reunion_seleccionada:
+                st.markdown(f"**Pasando lista para:** {reunion_seleccionada['tema']}")
+                st.markdown("---")
+                
+                # 2. Obtener miembros para armar la lista
+                miembros = obtener_lista_miembros_simple()
+                
+                if miembros:
+                    with st.form("form_asistencia"):
+                        datos_asistencia = {} # Diccionario para guardar el estado de cada uno
+                        
+                        # Creamos una fila por miembro
+                        for m in miembros:
+                            c1, c2 = st.columns([3, 2])
+                            with c1:
+                                st.write(f"👤 **{m['Nombre']}** (DUI: {m['DUI/Identificación']})")
+                            with c2:
+                                # Radio button para seleccionar estado
+                                estado = st.radio(
+                                    f"Estado {m['Id_miembro']}", 
+                                    ["Presente", "Ausente", "Excusado"], 
+                                    key=f"radio_{m['Id_miembro']}",
+                                    horizontal=True,
+                                    label_visibility="collapsed"
+                                )
+                                datos_asistencia[m['Id_miembro']] = estado
+                        
+                        st.markdown("---")
+                        guardar_btn = st.form_submit_button("💾 Guardar Asistencia")
+                        
+                        if guardar_btn:
+                            guardar_asistencia_bd(reunion_seleccionada['Id_reunion'], datos_asistencia)
+                else:
+                    st.warning("No hay miembros registrados para tomar asistencia.")
+        else:
+            st.info("No hay reuniones registradas. Ve a la pestaña 'Programar Nueva Reunión' primero.")
+
+
+def crear_reunion_bd(fecha, tema):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            grupo_id = st.session_state.get('grupo_id')
+            
+            # Insertamos en tabla Reunion (respetando 'tema' y 'Id_grupo')
+            query = "INSERT INTO Reunion (Fecha, tema, Id_grupo) VALUES (%s, %s, %s)"
+            cursor.execute(query, (fecha, tema, grupo_id))
+            conn.commit()
+            
+            st.success(f"Reunión del {fecha} creada exitosamente.")
+            st.rerun() # Recargar para que aparezca en la otra pestaña
+        except Exception as e:
+            st.error(f"Error al crear reunión: {e}")
+        finally:
+            conn.close()
+
+def obtener_reuniones_del_grupo():
+    conn = obtener_conexion()
+    data = []
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True) # Importante: dictionary=True
+            grupo_id = st.session_state.get('grupo_id')
+            
+            # Ordenamos por fecha descendente (las más nuevas primero)
+            query = "SELECT Id_reunion, Fecha, tema FROM Reunion WHERE Id_grupo = %s ORDER BY Fecha DESC"
+            cursor.execute(query, (grupo_id,))
+            data = cursor.fetchall()
+        except Exception as e:
+            st.error(f"Error al cargar reuniones: {e}")
+        finally:
+            conn.close()
+    return data
+
+def obtener_lista_miembros_simple():
+    # Función auxiliar ligera solo para obtener ID y Nombres
+    conn = obtener_conexion()
+    data = []
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            grupo_id = st.session_state.get('grupo_id')
+            query = "SELECT Id_miembro, Nombre, `DUI/Identificación` FROM Miembro WHERE Id_grupo = %s"
+            cursor.execute(query, (grupo_id,))
+            data = cursor.fetchall()
+        finally:
+            conn.close()
+    return data
+
+def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            
+            # Preparamos la query de inserción
+            query = "INSERT INTO Asistencia (Id_reunion, Id_miembro, Estado) VALUES (%s, %s, %s)"
+            
+            # Convertimos el diccionario en una lista de tuplas para insertar masivamente
+            valores = []
+            for id_miembro, estado in diccionario_asistencia.items():
+                valores.append((id_reunion, id_miembro, estado))
+            
+            # executemany es más eficiente para guardar varios registros a la vez
+            cursor.executemany(query, valores)
+            conn.commit()
+            
+            st.toast("✅ Asistencia guardada correctamente.")
+        except Exception as e:
+            # Si intentas guardar asistencia dos veces para la misma reunión, podría dar error duplicate
+            st.error(f"Error al guardar asistencia (¿quizás ya la tomaste?): {e}")
+        finally:
             conn.close()
