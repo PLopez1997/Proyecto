@@ -1,292 +1,378 @@
+# modulos/administrador.py
 import streamlit as st
 import pandas as pd
 import mysql.connector
-import hashlib
-import uuid # Para generar IDs anónimos si fuera necesario
 
-# Importación Confirmada por el Usuario: Asume que app.py carga el módulo correctamente
-# Esta importación debe ser relativa si administrador.py está en una carpeta, pero la mantengo
-# como la última que funcionó, asumiendo que el entorno de ejecución lo resuelve.
-from .config.conexion import obtener_conexion 
+# IMPORT: ajusta según dónde esté app.py.
+# Si ejecutas streamlit run app.py desde la raíz del proyecto, usa:
+from modulos.config.conexion import obtener_conexion
+# Si ejecutas desde dentro de modulos (raro), cambia a:
+# from .config.conexion import obtener_conexion
 
-# --- Funciones Auxiliares para Datos de Referencia ---
+# -----------------------
+# Helpers para inspección
+# -----------------------
+def table_columns(conn, table_name):
+    """Devuelve una lista de columnas existentes de table_name (sin fallo)."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
+        cols = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return cols
+    except Exception:
+        return []
 
+def pick_column(cols, candidates):
+    """Devuelve la primera columna de candidates que exista en cols o None."""
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+# -----------------------
+# Lectura flexible (referencias)
+# -----------------------
 def fetch_referencia_data():
-    """Función para obtener IDs de referencia (Distritos, Ciclos, Grupos) para los selectbox."""
-    
     conn = obtener_conexion()
-    if conn:
-        try:
-            # Trae todos los datos necesarios para las FKs y la asignación de usuarios
-            distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
-            ciclos = pd.read_sql("SELECT Id_ciclo, Nombre FROM Ciclo", conn)
-            grupos = pd.read_sql("SELECT Id_grupo, Nombre FROM Grupo", conn)
-            return {"distritos": distritos, "ciclos": ciclos, "grupos": grupos}
-        except Exception as e:
-            st.warning(f"No se pudieron cargar datos de referencia (Distrito/Ciclo/Grupo). Error: {e}")
-        finally:
-            conn.close()
-            
-    # Datos simulados en caso de fallo de conexión o tablas no existentes
-    return {
-        "distritos": pd.DataFrame({"Id_distrito": [1, 2], "Nombre": ["Central", "Norte"]}),
-        "ciclos": pd.DataFrame({"Id_ciclo": [1, 2, 3], "Nombre": ["Ciclo 2025-I", "Ciclo 2025-II", "Ciclo 2026-I"]}),
-        "grupos": pd.DataFrame({"Id_grupo": [101, 102], "Nombre": ["G-Paz", "G-Sol"]})
-    }
+    if not conn:
+        st.warning("No hay conexión a BD; usando datos simulados.")
+        return {
+            "distritos": pd.DataFrame({"Id_distrito":[1], "Label":["Distrito 1"]}),
+            "ciclos": pd.DataFrame({"Id_ciclo":[1], "Label":["Ciclo 1"]}),
+            "grupos": pd.DataFrame({"Id_grupo":[1], "Label":["Grupo 1"]})
+        }
 
-# --- 1. GESTIÓN DE USUARIOS ---
+    try:
+        # Intentaremos cargar tablas con nombres diversos y columnas alternativas
+        # Distritos
+        distrito_table = None
+        for t in ["Distrito", "distrito", "Distritos", "distritos"]:
+            if table_columns(conn, t):
+                distrito_table = t
+                break
 
+        # Ciclos
+        ciclo_table = None
+        for t in ["Ciclo", "ciclo", "Ciclos", "ciclos"]:
+            if table_columns(conn, t):
+                ciclo_table = t
+                break
+
+        # Grupos
+        grupo_table = None
+        for t in ["Grupo", "grupo", "Grupos", "grupos"]:
+            if table_columns(conn, t):
+                grupo_table = t
+                break
+
+        ref = {}
+
+        # Distritos: preferimos Id + alguna etiqueta
+        if distrito_table:
+            cols = table_columns(conn, distrito_table)
+            id_col = pick_column(cols, ["Id_distrito", "id_distrito", "Id_distr", "Id"])
+            label_col = pick_column(cols, ["Nombre", "nombre", "Descripcion", "descripcion", "Label", "label"])
+            if id_col and label_col:
+                ref["distritos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_distrito, `{label_col}` AS Nombre FROM `{distrito_table}`", conn)
+            elif id_col:
+                ref["distritos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_distrito FROM `{distrito_table}`", conn)
+                ref["distritos"]["Nombre"] = ref["distritos"]["Id_distrito"].astype(str)
+            else:
+                ref["distritos"] = pd.DataFrame({"Id_distrito":[],"Nombre":[]})
+        else:
+            ref["distritos"] = pd.DataFrame({"Id_distrito":[],"Nombre":[]})
+
+        # Ciclos
+        if ciclo_table:
+            cols = table_columns(conn, ciclo_table)
+            id_col = pick_column(cols, ["Id_ciclo", "id_ciclo", "Id"])
+            label_col = pick_column(cols, ["Nombre", "nombre", "Descripcion", "descripcion", "Periodo", "Ciclo"])
+            if id_col and label_col:
+                ref["ciclos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_ciclo, `{label_col}` AS Nombre FROM `{ciclo_table}`", conn)
+            elif id_col:
+                ref["ciclos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_ciclo FROM `{ciclo_table}`", conn)
+                ref["ciclos"]["Nombre"] = "Ciclo " + ref["ciclos"]["Id_ciclo"].astype(str)
+            else:
+                ref["ciclos"] = pd.DataFrame({"Id_ciclo":[],"Nombre":[]})
+        else:
+            ref["ciclos"] = pd.DataFrame({"Id_ciclo":[],"Nombre":[]})
+
+        # Grupos
+        if grupo_table:
+            cols = table_columns(conn, grupo_table)
+            id_col = pick_column(cols, ["Id_grupo", "id_grupo", "Id_cliente", "Id"])
+            label_col = pick_column(cols, ["Nombre", "nombre", "Descripcion", "descripcion", "Grupo"])
+            if id_col and label_col:
+                ref["grupos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_grupo, `{label_col}` AS Nombre FROM `{grupo_table}`", conn)
+            elif id_col:
+                ref["grupos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_grupo FROM `{grupo_table}`", conn)
+                ref["grupos"]["Nombre"] = ref["grupos"]["Id_grupo"].astype(str)
+            else:
+                ref["grupos"] = pd.DataFrame({"Id_grupo":[],"Nombre":[]})
+        else:
+            ref["grupos"] = pd.DataFrame({"Id_grupo":[],"Nombre":[]})
+
+        return ref
+
+    except Exception as e:
+        st.warning(f"No se pudieron cargar datos de referencia. Error: {e}")
+        return {
+            "distritos": pd.DataFrame({"Id_distrito":[],"Nombre":[]}),
+            "ciclos": pd.DataFrame({"Id_ciclo":[],"Nombre":[]}),
+            "grupos": pd.DataFrame({"Id_grupo":[],"Nombre":[]})
+        }
+    finally:
+        conn.close()
+
+# -----------------------
+# CREAR USUARIO (insert dinámico según columnas reales)
+# -----------------------
 def create_user_form(ref_data):
-    """Formulario para crear un nuevo usuario y asignar su rol/referencia."""
     st.subheader("➕ Registrar Nuevo Usuario")
-    
-    # Mapear nombres a IDs para el campo Id_referencia
-    distritos_map = dict(zip(ref_data["distritos"]["Nombre"], ref_data["distritos"]["Id_distrito"]))
-    grupos_map = dict(zip(ref_data["grupos"]["Nombre"], ref_data["grupos"]["Id_grupo"]))
+
+    # Mapas
+    distritos = list(ref_data["distritos"]["Nombre"]) if not ref_data["distritos"].empty else []
+    grupos = list(ref_data["grupos"]["Nombre"]) if not ref_data["grupos"].empty else []
 
     with st.form("form_new_user"):
-        new_username = st.text_input("Nombre de Usuario (Login)", help="Será usado para iniciar sesión")
+        new_username = st.text_input("Nombre de Usuario (Login)")
         new_password = st.text_input("Contraseña", type="password")
-        new_rol = st.selectbox("Rol del Usuario", 
-                               ['Administrador', 'Promotora', 'Directivo', 'Miembro Común'])
-        
-        id_ref_seleccionado = None
-        
-        # Lógica dinámica para el campo Id_referencia
-        if new_rol == 'Promotora':
-            st.info("La Promotora debe ser asignada a un Distrito. Su Id_referencia será el Id_distrito.")
-            distrito_nombre = st.selectbox("Asignar Distrito de Referencia", ref_data["distritos"]["Nombre"])
-            id_ref_seleccionado = distritos_map.get(distrito_nombre)
-            
-        elif new_rol in ['Directivo', 'Miembro Común']:
-            st.info("El Directivo/Miembro debe ser asignado a un Grupo. Su Id_referencia será el Id_grupo.")
-            grupo_nombre = st.selectbox("Asignar Grupo de Referencia", ref_data["grupos"]["Nombre"])
-            id_ref_seleccionado = grupos_map.get(grupo_nombre)
-            
-        elif new_rol == 'Administrador':
-             st.info("El Administrador tiene acceso total. Su Id_referencia será NULL.")
-             id_ref_seleccionado = None
+        new_rol = st.selectbox("Rol del Usuario", ['administrador','promotora','junta directiva','miembro'])
 
+        id_ref = None
+        id_grupo = None
+        id_distrito = None
 
-        submitted = st.form_submit_button("Crear Usuario en el Sistema de Login")
-        
+        if new_rol == "promotora":
+            if distritos:
+                distrito_sel = st.selectbox("Asignar Distrito", distritos)
+                # buscar id por nombre
+                id_ref = ref_data["distritos"].loc[ref_data["distritos"]["Nombre"]==distrito_sel, "Id_distrito"].iloc[0]
+            else:
+                st.info("No hay distritos cargados en la BD.")
+
+        elif new_rol in ("junta directiva","miembro"):
+            if grupos:
+                grupo_sel = st.selectbox("Asignar Grupo", grupos)
+                id_grupo = ref_data["grupos"].loc[ref_data["grupos"]["Nombre"]==grupo_sel, "Id_grupo"].iloc[0]
+            else:
+                st.info("No hay grupos cargados en la BD.")
+
+        submitted = st.form_submit_button("Crear Usuario")
         if submitted:
             if not new_username or not new_password:
-                st.error("El Usuario y la Contraseña son obligatorios.")
+                st.error("Usuario y contraseña obligatorios.")
                 return
 
-            # Generar Hash de Contraseña (Recomendado: Usar un algoritmo más seguro como bcrypt)
-            password_hash = hashlib.sha256(new_password.encode()).hexdigest()
-            
-            # El administrador no tiene filtro, por lo que su Id_referencia es NULL
-            final_id_referencia = id_ref_seleccionado
-            
             con = obtener_conexion()
-            if con:
-                try:
-                    cursor = con.cursor()
-                    # ASUME que tienes una tabla llamada 'Login' o 'Usuario' con estas columnas
-                    sql = """
-                    INSERT INTO Login (Usuario, Contrasena_Hash, Rol, Id_referencia)
-                    VALUES (%s, %s, %s, %s)
-                    """
-                    # Nota: Id_referencia puede ser NULL, por eso se pasa directamente
-                    cursor.execute(sql, (new_username, password_hash, new_rol, final_id_referencia))
-                    con.commit()
-                    st.success(f"Usuario {new_username} ({new_rol}) creado con éxito!")
-                    st.json({
-                        "Usuario": new_username, 
-                        "Rol": new_rol, 
-                        "Id_referencia": final_id_referencia if final_id_referencia is not None else "NULL (Acceso Global)"
-                    })
-                    st.rerun()
-                except Exception as e:
-                    con.rollback()
-                    st.error(f"❌ Error al insertar el usuario: {e}. Revise si la tabla Login/Usuario existe y acepta NULLs en Id_referencia.")
-                finally:
-                    cursor.close()
-                    con.close()
-            else:
-                st.error("No se pudo establecer conexión con la base de datos para la gestión de usuarios.")
+            if not con:
+                st.error("No se pudo conectar a la base de datos.")
+                return
 
-# --- 2. GESTIÓN DE GRUPOS Y MIEMBROS (Código existente, movido aquí) ---
+            try:
+                cols = table_columns(con, "Login") or table_columns(con, "login") or table_columns(con, "Usuario") or table_columns(con, "usuario")
+                # Detectar columnas posibles
+                user_col = pick_column(cols, ["Usuario","usuario","user","User"])
+                pass_col = pick_column(cols, ["Contraseña","Contrasena","Contrasena_Hash","Password","password"])
+                rol_col = pick_column(cols, ["Rol","rol","Role"])
+                id_ref_col = pick_column(cols, ["Id_referencia","Id_referencia","id_referencia"])
+                id_grupo_col = pick_column(cols, ["Id_grupo","id_grupo"])
+                id_distr_col = pick_column(cols, ["Id_distrito","id_distrito"])
 
+                cursor = con.cursor()
+
+                # Si la tabla usa hash o no: aquí guardamos la contraseña tal cual si la columna se llama 'Contraseña'
+                # RECOMENDACIÓN: cambiar a hashed en BD; aquí hacemos hashing SHA256 si la columna sugiere 'Contrasena_Hash'
+                to_store_pass = new_password
+                if pass_col and "hash" in (pass_col.lower() or ""):
+                    import hashlib
+                    to_store_pass = hashlib.sha256(new_password.encode()).hexdigest()
+
+                # Construir INSERT dinámico
+                insert_cols = []
+                insert_vals = []
+                params = []
+
+                if user_col:
+                    insert_cols.append(user_col); insert_vals.append("%s"); params.append(new_username)
+                if pass_col:
+                    insert_cols.append(pass_col); insert_vals.append("%s"); params.append(to_store_pass)
+                if rol_col:
+                    insert_cols.append(rol_col); insert_vals.append("%s"); params.append(new_rol)
+                # referencia/grupo/distrito si existen
+                if id_ref_col:
+                    insert_cols.append(id_ref_col); insert_vals.append("%s"); params.append(id_ref)
+                if id_grupo_col:
+                    insert_cols.append(id_grupo_col); insert_vals.append("%s"); params.append(id_grupo)
+                if id_distr_col:
+                    insert_cols.append(id_distr_col); insert_vals.append("%s"); params.append(id_distrito)
+
+                if not insert_cols:
+                    st.error("No se pudo detectar columnas de la tabla de usuarios en la BD.")
+                    return
+
+                sql = f"INSERT INTO Login ({', '.join('`'+c+'`' for c in insert_cols)}) VALUES ({', '.join(insert_vals)})"
+                cursor.execute(sql, tuple(params))
+                con.commit()
+                st.success("Usuario creado correctamente en la BD.")
+                st.rerun()
+            except Exception as e:
+                con.rollback()
+                st.error(f"Error al insertar usuario: {e}")
+            finally:
+                cursor.close()
+                con.close()
+
+# -----------------------
+# GESTIÓN DE GRUPOS (usando la tabla real 'grupos' o 'Grupo')
+# -----------------------
 def create_new_group(ref_data):
-    """Formulario y lógica para registrar un nuevo grupo en la tabla Grupo."""
-    st.subheader("➕ Crear Nuevo Grupo GAPC")
-
-    distritos_map = dict(zip(ref_data["distritos"]["Nombre"], ref_data["distritos"]["Id_distrito"]))
-    ciclos_map = dict(zip(ref_data["ciclos"]["Nombre"], ref_data["ciclos"]["Id_ciclo"]))
+    st.subheader("➕ Crear Nuevo Grupo")
+    grupos_df = ref_data["grupos"]
+    ciclos_df = ref_data["ciclos"]
 
     with st.form("form_nuevo_grupo"):
-        nombre = st.text_input("Nombre del Grupo (Obligatorio)")
-        fecha_inicio = st.date_input("Fecha de inicio del Ciclo")
-        
-        distrito_nombre = st.selectbox("Asignar a Distrito (FK)", ref_data["distritos"]["Nombre"])
-        ciclo_nombre = st.selectbox("Asignar a Ciclo (FK)", ref_data["ciclos"]["Nombre"])
-        
-        tasa_interes = st.number_input("Tasa de Interés Anual (%)", min_value=1.0, max_value=100.0, value=12.0)
-        tipo_multa = st.selectbox("Tipo de Multa", ["Monto Fijo", "Porcentaje de Aporte", "Sin Multa"])
-        regla_interna = st.text_area("Regla Interna/Observaciones")
+        nombre = st.text_input("Nombre del Grupo")
+        fecha_inicio = st.date_input("Fecha inicio")
+        ciclo_sel = None
+        if not ciclos_df.empty:
+            ciclo_sel = st.selectbox("Ciclo", ciclos_df["Nombre"])
+            id_ciclo = int(ciclos_df.loc[ciclos_df["Nombre"]==ciclo_sel, "Id_ciclo"].iloc[0])
+        else:
+            id_ciclo = None
 
-        enviar = st.form_submit_button("✅ Guardar Nuevo Grupo")
+        distrito_sel = None
+        if not ref_data["distritos"].empty:
+            distrito_sel = st.selectbox("Distrito", ref_data["distritos"]["Nombre"])
+            id_distrito = int(ref_data["distritos"].loc[ref_data["distritos"]["Nombre"]==distrito_sel, "Id_distrito"].iloc[0])
+        else:
+            id_distrito = None
 
-        if enviar:
+        tasa = st.number_input("Tasa de interés", min_value=0.0, value=0.1)
+        tipo_multa = st.text_input("Tipo de multa", value="")
+        regla = st.text_area("Regla interna", value="")
+
+        submitted = st.form_submit_button("Crear Grupo")
+        if submitted:
             if not nombre:
-                st.warning("⚠️ El nombre del grupo es obligatorio.")
+                st.error("Nombre obligatorio")
                 return
 
-            id_distrito = distritos_map.get(distrito_nombre)
-            id_ciclo = ciclos_map.get(ciclo_nombre)
-            
             con = obtener_conexion()
-            if con:
-                try:
-                    cursor = con.cursor()
-                    # Se usa Id_distrito para el campo de referencia del grupo
-                    sql = """
-                    INSERT INTO Grupo (Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna, Id_distrito)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """
-                    cursor.execute(sql, (
-                        nombre, str(fecha_inicio), id_ciclo, tasa_interes, tipo_multa, regla_interna, id_distrito
-                    ))
-                    con.commit()
-                    st.success(f"✅ Grupo '{nombre}' registrado correctamente.")
-                    st.balloons()
-                    st.rerun()
-                except Exception as e:
-                    con.rollback()
-                    st.error(f"❌ Error al registrar el grupo. Revise la estructura de la tabla Grupo. Error: {e}")
-                finally:
-                    cursor.close()
-                    con.close()
-            else:
-                st.error("No se pudo establecer conexión con la base de datos.")
-
-def add_member_to_group(ref_data):
-    """Formulario y lógica para agregar un miembro a un grupo existente."""
-    st.subheader("👥 Agregar Nuevo Miembro a Grupo")
-
-    grupos_map = dict(zip(ref_data["grupos"]["Nombre"], ref_data["grupos"]["Id_grupo"]))
-
-    with st.form("form_nuevo_miembro"):
-        nombre_miembro = st.text_input("Nombre Completo del Miembro")
-        cedula = st.text_input("Cédula/DUI (Identificación)")
-        grupo_nombre = st.selectbox("Asignar a Grupo (FK)", ref_data["grupos"]["Nombre"])
-
-        enviar = st.form_submit_button("✅ Guardar Nuevo Miembro")
-
-        if enviar:
-            if not nombre_miembro or not cedula:
-                st.warning("⚠️ Nombre y Cédula son obligatorios.")
+            if not con:
+                st.error("No hay conexión a BD")
                 return
+            try:
+                # Detectar nombre real de tabla grupos
+                grupo_table = None
+                for t in ["grupos","Grupo","GrupoS","GRUPOS"]:
+                    if table_columns(con, t):
+                        grupo_table = t
+                        break
+                if not grupo_table:
+                    st.error("No se encontró tabla de grupos en la BD.")
+                    return
 
-            id_grupo = grupos_map.get(grupo_nombre)
-            
-            con = obtener_conexion()
-            if con:
-                try:
-                    cursor = con.cursor()
-                    sql = """
-                    INSERT INTO Miembro (Nombre, Cedula, Id_grupo)
-                    VALUES (%s, %s, %s)
-                    """
-                    cursor.execute(sql, (nombre_miembro, cedula, id_grupo))
-                    con.commit()
-                    st.success(f"✅ Miembro '{nombre_miembro}' agregado al grupo {grupo_nombre}.")
-                    st.rerun()
-                except Exception as e:
-                    con.rollback()
-                    st.error(f"❌ Error al registrar el miembro. Revise la estructura de la tabla Miembro. Error: {e}")
-                finally:
-                    cursor.close()
-                    con.close()
-            else:
-                st.error("No se pudo establecer conexión con la base de datos.")
+                cols = table_columns(con, grupo_table)
+                # columnas esperadas: Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna, Id_distrito
+                insert_cols = []
+                params = []
+                placeholders = []
 
-def pagina_grupos_admin():
-    """ Contenido principal para la gestión de grupos y miembros. """
-    ref_data = fetch_referencia_data()
-    
-    tab_grupo, tab_miembro = st.tabs(["Crear Nuevo Grupo", "Agregar Miembro"])
-    
-    with tab_grupo:
-        create_new_group(ref_data)
-        
-    with tab_miembro:
-        add_member_to_group(ref_data)
+                def maybe_add(colname, value):
+                    if colname in cols:
+                        insert_cols.append(colname)
+                        placeholders.append("%s")
+                        params.append(value)
 
+                maybe_add("Nombre", nombre)
+                maybe_add("Fecha_inicio", str(fecha_inicio))
+                maybe_add("Id_ciclo", id_ciclo)
+                maybe_add("Tasa_interes", tasa)
+                maybe_add("Tipo_multa", tipo_multa)
+                maybe_add("Regla_interna", regla)
+                maybe_add("Id_distrito", id_distrito)
 
-# --- 3. REPORTES GLOBALES ---
+                if not insert_cols:
+                    st.error("Estructura de tabla grupos no reconocida.")
+                    return
 
+                sql = f"INSERT INTO `{grupo_table}` ({', '.join('`'+c+'`' for c in insert_cols)}) VALUES ({', '.join(placeholders)})"
+                cur = con.cursor()
+                cur.execute(sql, tuple(params))
+                con.commit()
+                st.success("Grupo creado correctamente en la BD.")
+                st.rerun()
+            except Exception as e:
+                con.rollback()
+                st.error(f"Error al crear grupo: {e}")
+            finally:
+                cur.close()
+                con.close()
+
+# -----------------------
+# REPORTES: leer tabla caja si existe
+# -----------------------
 def show_reports():
-    """Muestra todos los reportes del sistema (sin filtros)."""
-    st.header("📊 Reportes Consolidados (Acceso Global)")
-    st.markdown("El Administrador puede ver el rendimiento financiero de todos los Distritos y Grupos.")
-    
-    # 1. Reporte de Caja Global
-    st.subheader("1. Reporte de Caja Global")
-    st.markdown("Consulta SQL: `SELECT Fecha, Monto, Tipo, Id_grupo FROM Transaccion`")
-    
-    # Simulación de consulta o placeholder real de DB
-    data_caja = {
-        'Fecha': ['2025-10-01', '2025-10-01', '2025-10-02', '2025-10-02'],
-        'Grupo_ID': [101, 102, 101, 102],
-        'Tipo': ['Aporte', 'Préstamo', 'Multa', 'Aporte'],
-        'Monto': [50.00, -200.00, 5.00, 75.00]
-    }
-    df_caja = pd.DataFrame(data_caja)
-    st.dataframe(df_caja, use_container_width=True)
-    
-    # 2. Resumen de Cartera y Mora
-    st.subheader("2. Cartera de Préstamos y Mora")
-    st.markdown("Consulta SQL: `SELECT COUNT(*), SUM(Monto_pendiente), AVG(Dias_mora) FROM Prestamo`")
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric(label="Total Préstamos Activos", value="150", help="Conteo de todos los préstamos en curso.")
-    col2.metric(label="Capital Prestado Total", value="$55,000.00", help="Monto total pendiente de pago.")
-    col3.metric(label="Tasa de Mora Global", value="8.5%", delta_color="inverse", help="Porcentaje de préstamos con más de X días de retraso.")
-    
-    st.markdown("---")
-    st.subheader("3. Utilidades Generadas (Simulación)")
-    st.metric(label="Utilidad Bruta Acumulada", value="$4,520.00", help="Intereses y multas generadas en el ciclo actual.")
+    st.header("📊 Reportes Consolidados")
+    con = obtener_conexion()
+    if not con:
+        st.error("No hay conexión.")
+        return
+    try:
+        # Detectar tabla caja (varios nombres posibles)
+        caja_table = None
+        for t in ["Caja","caja","Cajas"]:
+            if table_columns(con, t):
+                caja_table = t
+                break
+        if not caja_table:
+            st.info("No se encontró tabla Caja en la BD. Mostrar datos simulados.")
+            st.dataframe(pd.DataFrame({"msg":["Tabla Caja no encontrada"]}))
+            return
+
+        cols = table_columns(con, caja_table)
+        # Pedimos algunas columnas comunes para mostrar: Fecha, Id_grupo, Ingresos, Egresos, Saldo actual
+        want_cols = ["Fecha","fecha","Id_grupo","Id_grupo","Ingresos","Egresos","Saldo actual","Saldo_actual","Saldo"]
+        to_select = []
+        for c in want_cols:
+            if c in cols and c not in to_select:
+                to_select.append(c)
+
+        if not to_select:
+            # si no hay columnas conocidas, seleccionamos todas
+            df = pd.read_sql(f"SELECT * FROM `{caja_table}` LIMIT 200", con)
+        else:
+            # formatear columnas entre backticks
+            sel = ", ".join(f"`{c}`" for c in to_select)
+            df = pd.read_sql(f"SELECT {sel} FROM `{caja_table}` LIMIT 200", con)
+
+        st.dataframe(df, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Error cargando reportes: {e}")
+    finally:
+        con.close()
 
 
-# --- Función Principal del Administrador (Punto de Entrada) ---
-
+# -----------------------
+# Página principal del admin
+# -----------------------
 def administrador_page():
-    """
-    Función principal que se ejecuta al iniciar sesión como Administrador.
-    Define el menú lateral y el contenido de la página.
-    """
-    
-    # Obtener los datos de referencia una sola vez al inicio
     ref_data = fetch_referencia_data()
-    
-    st.title("Panel de Administración Global")
-    
-    # 1. Mostrar el menú lateral con st.sidebar
-    opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Reportes Consolidados"] 
-    seleccion = st.sidebar.selectbox("Selecciona una sección", opciones)
-    
+    st.title("Panel de Administración")
+    opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Reportes Consolidados"]
+    seleccion = st.sidebar.selectbox("Sección", opciones)
     st.sidebar.markdown("---")
-    # Agregamos la lógica de cerrar sesión simple
-    if st.sidebar.button("Cerrar Sesión"):
-        if 'rol' in st.session_state:
-            del st.session_state['rol']
-        if 'filtro_id' in st.session_state:
-            del st.session_state['filtro_id']
+    if st.sidebar.button("Cerrar sesión"):
+        for k in ["sesion_iniciada","Usuario","tipo_usuario","rol"]:
+            if k in st.session_state: del st.session_state[k]
         st.rerun()
 
-    # 2. Según la opción seleccionada, mostramos el contenido correspondiente
     if seleccion == "Gestión de Usuarios":
-        st.header("👤 Gestión de Usuarios")
         create_user_form(ref_data)
-        
     elif seleccion == "Grupos y Distritos":
-        st.header("🏘️ Gestión de Grupos y Miembros")
-        pagina_grupos_admin()
-        
+        create_new_group(ref_data)
     elif seleccion == "Reportes Consolidados":
         show_reports()
