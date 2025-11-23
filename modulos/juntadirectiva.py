@@ -293,7 +293,8 @@ def ver_ahorros_reunion(id_reunion):
                 st.info("Aún no hay ahorros registrados en esta sesión.")
         finally:
             conn.close()
-            
+
+
 def crear_reunion_bd(fecha, tema):
     conn = obtener_conexion()
     if conn:
