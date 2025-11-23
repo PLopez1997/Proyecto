@@ -275,25 +275,35 @@ def ver_ahorros_reunion(id_reunion):
     conn = obtener_conexion()
     if conn:
         try:
-            # Consulta con JOIN para ver el nombre del miembro
+            # CORRECCIÓN:
+            # 1. Aseguramos Id_ahorro con mayúscula.
+            # 2. Si la columna fecha da error, prueba borrando ", a.Fecha" del SELECT.
             query = """
                 SELECT m.Nombre, a.Monto, a.Fecha 
                 FROM Ahorro a
                 JOIN Miembro m ON a.Id_miembro = m.Id_miembro
                 WHERE a.Id_reunion = %s
-                ORDER BY a.id_ahorro DESC
+                ORDER BY a.Id_ahorro DESC
             """
             df = pd.read_sql(query, conn, params=(id_reunion,))
             
             if not df.empty:
+                # Formateamos la columna Fecha para que se vea limpia (sin la hora)
+                if 'Fecha' in df.columns:
+                    df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+                
                 st.dataframe(df, use_container_width=True)
+                
+                # Calculamos el total
                 total = df['Monto'].sum()
                 st.metric("Total Recaudado hoy", f"${total:,.2f}")
             else:
                 st.info("Aún no hay ahorros registrados en esta sesión.")
+        except Exception as e:
+            # Esto nos mostrará el error REAL en la pantalla para poder arreglarlo
+            st.error(f"Error SQL: {e}")
         finally:
             conn.close()
-
 
 def crear_reunion_bd(fecha, tema):
     conn = obtener_conexion()
