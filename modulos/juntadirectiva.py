@@ -16,7 +16,7 @@ def junta_directiva_page():
         gestionar_reuniones()
         
     elif choice == "Caja y Préstamos":
-        st.info("Módulo de Caja en construcción.")
+        gestionar_caja_prestamos()
 
     elif choice == "Reportes":
         st.info("Módulo de Reportes en construcción.")
@@ -381,3 +381,306 @@ def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
             st.error(f"Error al guardar asistencia (¿quizás ya la tomaste?): {e}")
         finally:
             conn.close()
+
+#----------------------------------------------------
+#PARTE 3 PESTAÑA 3 CAJA Y PRESTAMOS
+#----------------------------------------------------
+
+
+# --- AGREGAR ESTO EN TU MENU PRINCIPAL ---
+# elif choice == "Caja y Préstamos":
+#     gestionar_caja_prestamos()
+
+# --- NUEVA FUNCIÓN PRINCIPAL ---
+
+def gestionar_caja_prestamos():
+    st.header("💰 Gestión Financiera: Caja y Créditos")
+    
+    # Calculamos el dinero disponible en tiempo real
+    saldo_actual = calcular_saldo_disponible()
+    
+    # KPI Principal: Caja Disponible
+    st.metric(label="💵 EFECTIVO DISPONIBLE EN CAJA", value=f"${saldo_actual:,.2f}")
+    
+    tab1, tab2, tab3, tab4 = st.tabs(["➕ Nuevo Préstamo", "📥 Registrar Pago", "⚠️ Multas", "📜 Movimientos de Caja"])
+
+    # --- PESTAÑA 1: SOLICITAR PRÉSTAMO ---
+    with tab1:
+        st.subheader("Otorgar Nuevo Préstamo")
+        
+        with st.form("form_prestamo"):
+            col1, col2 = st.columns(2)
+            with col1:
+                miembros = obtener_lista_miembros_simple()
+                dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
+                id_miembro = st.selectbox("Solicitante", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
+                
+                monto = st.number_input("Monto Solicitado ($)", min_value=0.0, step=5.0)
+            
+            with col2:
+                # Interés mensual típico (ej. 5% o 10%)
+                tasa = st.number_input("Tasa de Interés (%)", min_value=0.0, value=5.0, step=0.1)
+                # Plazo (asumimos meses para simplificar, ajusta según tu regla)
+                plazo = st.number_input("Plazo (meses)", min_value=1, value=6)
+                
+            fecha_inicio = st.date_input("Fecha de desembolso")
+            
+            # Cálculo informativo para el usuario
+            interes_estimado = monto * (tasa / 100) * plazo
+            total_pagar = monto + interes_estimado
+            st.info(f"📝 Simulación: El miembro pagará ${interes_estimado:.2f} de interés. Total a devolver: ${total_pagar:.2f}")
+
+            submitted = st.form_submit_button("Aprobar y Desembolsar")
+            if submitted:
+                if monto > saldo_actual:
+                    st.error(f"⛔ Fondos insuficientes. Solo tienes ${saldo_actual} en caja.")
+                elif monto <= 0:
+                    st.error("El monto debe ser mayor a 0.")
+                else:
+                    crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha_inicio)
+
+    # --- PESTAÑA 2: REGISTRAR PAGO ---
+    with tab2:
+        st.subheader("Cobro de Cuotas")
+        
+        # 1. Buscar préstamos ACTIVOS
+        prestamos_activos = obtener_prestamos_activos()
+        
+        if prestamos_activos:
+            prestamo_sel = st.selectbox(
+                "Seleccione el Préstamo a abonar:", 
+                options=prestamos_activos,
+                format_func=lambda x: f"{x['Nombre_Miembro']} - Deuda Orig: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
+            )
+            
+            st.markdown("---")
+            c1, c2, c3 = st.columns(3)
+            # Mostramos cuánto ha pagado hasta ahora (necesitaríamos una consulta extra, por ahora simple)
+            c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
+            c2.metric("Tasa Interés", f"{prestamo_sel['Tasa_interes']}%")
+            
+            with st.form("form_pago"):
+                col_cap, col_int = st.columns(2)
+                with col_cap:
+                    abono_capital = st.number_input("Abono a Capital ($)", min_value=0.0, step=1.0)
+                with col_int:
+                    pago_interes = st.number_input("Pago de Interés ($)", min_value=0.0, step=1.0)
+                
+                fecha_pago = st.date_input("Fecha de pago")
+                
+                if st.form_submit_button("Registrar Pago"):
+                    if abono_capital == 0 and pago_interes == 0:
+                        st.warning("Debe ingresar al menos un valor.")
+                    else:
+                        registrar_pago_bd(prestamo_sel['Id_prestamo'], abono_capital, pago_interes, fecha_pago, prestamo_sel['Id_grupo'])
+        else:
+            st.info("No hay préstamos activos pendientes de pago.")
+
+    # --- PESTAÑA 3: MULTAS ---
+    with tab3:
+        st.subheader("Gestión de Multas y Mora")
+        
+        col_m1, col_m2 = st.columns(2)
+        
+        with col_m1:
+            st.markdown("#### 😡 Aplicar Nueva Multa")
+            with st.form("form_multa"):
+                miembro_multa = st.selectbox("Miembro", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x], key="sel_multa")
+                monto_multa = st.number_input("Monto Multa ($)", min_value=1.0, step=0.5)
+                motivo = st.text_input("Motivo (Ej. Llegada tarde, Falta injustificada)")
+                
+                # Opcional: Vincular a reunión si aplica
+                
+                if st.form_submit_button("Aplicar Multa"):
+                    aplicar_multa_bd(miembro_multa, monto_multa, motivo)
+
+        with col_m2:
+            st.markdown("#### 📋 Multas Pendientes")
+            listar_multas_pendientes()
+
+    # --- PESTAÑA 4: HISTORIAL CAJA ---
+    with tab4:
+        st.subheader("Libro Diario de Caja")
+        ver_movimientos_caja()
+
+# ==========================================
+# FUNCIONES SQL (Backend)
+# ==========================================
+
+def calcular_saldo_disponible():
+    """
+    Calcula: (Ahorros + Pagos Capital + Pagos Interes + Multas Pagadas) - (Prestamos Entregados - Egresos Varios)
+    Nota: Usamos la tabla 'Caja' si registras todo ahí, o sumamos las tablas individuales.
+    Para ser más exactos, sumaremos las tablas operativas.
+    """
+    conn = obtener_conexion()
+    saldo = 0.0
+    if conn:
+        try:
+            cursor = conn.cursor()
+            grupo_id = st.session_state.get('grupo_id')
+
+            # 1. Sumar Ahorros
+            cursor.execute("SELECT SUM(Monto) FROM Ahorro JOIN Miembro ON Ahorro.Id_miembro = Miembro.Id_miembro WHERE Miembro.Id_grupo = %s", (grupo_id,))
+            res_ahorro = cursor.fetchone()[0] or 0.0
+
+            # 2. Sumar Pagos (Capital + Interes) de préstamos de este grupo
+            # (Requiere JOIN complejo, simplificamos asumiendo que el pago tiene fecha y logica)
+            # Para simplificar y no hacer queries gigantes, usaremos la tabla CAJA si está bien llevada.
+            # PERO, como estamos construyendo el sistema, lo mejor es sumar la tabla CAJA directamente.
+            
+            cursor.execute("SELECT Tipo_transaccion, Monto FROM Caja WHERE Id_grupo = %s", (grupo_id,))
+            movimientos = cursor.fetchall()
+            
+            for tipo, monto in movimientos:
+                if tipo == 'Ingreso':
+                    saldo += monto
+                elif tipo == 'Egreso':
+                    saldo -= monto
+            
+            # Ajuste inicial: Si la caja está vacía, asumimos que el saldo es la suma de ahorros (si no se han registrado en caja aún)
+            if not movimientos and res_ahorro > 0:
+                saldo = res_ahorro 
+
+        except Exception as e:
+            st.error(f"Error calculando saldo: {e}")
+        finally:
+            conn.close()
+    return saldo
+
+def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            grupo_id = st.session_state.get('grupo_id')
+            
+            # 1. Insertar en tabla Prestamo
+            query_prestamo = """
+                INSERT INTO Prestamo (Id_miembro, Monto, Tasa_interes, Plazo, Fecha_inicio, Estado) 
+                VALUES (%s, %s, %s, %s, %s, 'Activo')
+            """
+            cursor.execute(query_prestamo, (id_miembro, monto, tasa, plazo, fecha))
+            
+            # 2. Registrar la SALIDA de dinero en la tabla Caja
+            query_caja = """
+                INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
+                VALUES (%s, 'Egreso', %s, %s, %s)
+            """
+            detalle = f"Préstamo a miembro ID {id_miembro}"
+            cursor.execute(query_caja, (grupo_id, monto, fecha, detalle))
+            
+            conn.commit()
+            st.success("✅ Préstamo otorgado y desembolsado de caja.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al crear préstamo: {e}")
+        finally:
+            conn.close()
+
+def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            
+            # 1. Insertar en tabla Pago
+            # Nota: Tu tabla Pago en la foto tiene Monto_capital y Monto_interes? 
+            # Si no, ajusta los campos. Asumo que sí por lógica contable.
+            query_pago = """
+                INSERT INTO Pago (Id_prestamo, Monto_capital, Monto_interes, Fecha) 
+                VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(query_pago, (id_prestamo, capital, interes, fecha))
+            
+            # 2. Registrar el INGRESO en Caja
+            total_recibido = capital + interes
+            query_caja = """
+                INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
+                VALUES (%s, 'Ingreso', %s, %s, %s)
+            """
+            detalle = f"Pago Prestamo ID {id_prestamo} (C:${capital} I:${interes})"
+            cursor.execute(query_caja, (id_grupo, total_recibido, fecha, detalle))
+            
+            # 3. Opcional: Verificar si el préstamo se saldó (requiere calcular saldos)
+            # Por ahora lo dejamos activo.
+            
+            conn.commit()
+            st.success(f"✅ Pago de ${total_recibido} registrado correctamente.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al registrar pago: {e}")
+        finally:
+            conn.close()
+
+def obtener_prestamos_activos():
+    conn = obtener_conexion()
+    data = []
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            grupo_id = st.session_state.get('grupo_id')
+            
+            # Traemos datos del préstamo y el nombre del miembro
+            query = """
+                SELECT p.Id_prestamo, p.Monto, p.Tasa_interes, p.Fecha_inicio, m.Nombre as Nombre_Miembro, p.Id_miembro, m.Id_grupo
+                FROM Prestamo p
+                JOIN Miembro m ON p.Id_miembro = m.Id_miembro
+                WHERE m.Id_grupo = %s AND p.Estado = 'Activo'
+            """
+            cursor.execute(query, (grupo_id,))
+            data = cursor.fetchall()
+        finally:
+            conn.close()
+    return data
+
+def aplicar_multa_bd(id_miembro, monto, motivo):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Estado por defecto: Pendiente
+            query = "INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, 'Pendiente')"
+            cursor.execute(query, (id_miembro, monto, motivo))
+            conn.commit()
+            st.toast("Multa aplicada.")
+            st.rerun() # Para actualizar la lista de pendientes
+        except Exception as e:
+            st.error(f"Error: {e}")
+        finally:
+            conn.close()
+
+def listar_multas_pendientes():
+    conn = obtener_conexion()
+    if conn:
+        try:
+            grupo_id = st.session_state.get('grupo_id')
+            # Join para ver nombre
+            query = """
+                SELECT mu.Id_multa, m.Nombre, mu.Monto, mu.Motivo 
+                FROM Multa mu
+                JOIN Miembro m ON mu.Id_miembro = m.Id_miembro
+                WHERE m.Id_grupo = %s AND mu.Estado = 'Pendiente'
+            """
+            df = pd.read_sql(query, conn, params=(grupo_id,))
+            if not df.empty:
+                st.dataframe(df, use_container_width=True)
+                # Aquí podrías poner un botón para "Pagar Multa" que cambie el estado a 'Pagado'
+                # y sume a la Caja.
+            else:
+                st.success("🎉 No hay multas pendientes.")
+        finally:
+            conn.close()
+
+def ver_movimientos_caja():
+    conn = obtener_conexion()
+    if conn:
+        try:
+            grupo_id = st.session_state.get('grupo_id')
+            query = "SELECT Fecha, Tipo_transaccion, Monto, Detalle FROM Caja WHERE Id_grupo = %s ORDER BY Fecha DESC"
+            df = pd.read_sql(query, conn, params=(grupo_id,))
+            st.dataframe(df, use_container_width=True)
+        finally:
+            conn.close()
+
+
