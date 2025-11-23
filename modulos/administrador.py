@@ -6,7 +6,7 @@ import uuid # Para generar IDs anónimos si fuera necesario
 
 # IMPORT: ajusta según dónde esté app.py.
 # Si ejecutas streamlit run app.py desde la raíz del proyecto, usa:
-from config.conexion import obtener_conexion
+from .config.conexion import obtener_conexion
 
 # -----------------------
 # Helpers para inspección
