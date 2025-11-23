@@ -648,14 +648,14 @@ def aplicar_multa_bd(id_miembro, monto, motivo):
     if conn:
         try:
             cursor = conn.cursor()
-            # Estado por defecto: Pendiente
-            query = "INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, 'Pendiente')"
+            # AJUSTE DE NOMBRES: Id_Miembro (con M mayúscula)
+            query = "INSERT INTO Multa (Id_Miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, 'Pendiente')"
             cursor.execute(query, (id_miembro, monto, motivo))
             conn.commit()
             st.toast("Multa aplicada.")
-            st.rerun() # Para actualizar la lista de pendientes
+            st.rerun()
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error al aplicar multa: {e}")
         finally:
             conn.close()
 
@@ -664,7 +664,7 @@ def listar_multas_pendientes():
     if conn:
         try:
             grupo_id = st.session_state.get('grupo_id')
-            # Join para ver nombre
+            
             query = """
                 SELECT mu.Id_multa, m.Nombre, mu.Monto, mu.Motivo 
                 FROM Multa mu
@@ -672,12 +672,46 @@ def listar_multas_pendientes():
                 WHERE m.Id_grupo = %s AND mu.Estado = 'Pendiente'
             """
             df = pd.read_sql(query, conn, params=(grupo_id,))
+            
             if not df.empty:
+                # Opcional: Botón para pagar multa
                 st.dataframe(df, use_container_width=True)
-                # Aquí podrías poner un botón para "Pagar Multa" que cambie el estado a 'Pagado'
-                # y sume a la Caja.
+                
+                # Selector para pagar multas
+                multa_a_pagar = st.selectbox("Seleccionar Multa para Pagar", options=df['Id_multa'], key="sel_pagar_multa")
+                if st.button("Marcar como Pagada"):
+                    pagar_multa_bd(multa_a_pagar)
             else:
-                st.success("🎉 No hay multas pendientes.")
+                st.info("🎉 No hay multas pendientes.")
+        except Exception as e:
+            st.error(f"Error SQL (Verifica nombres de columnas en BD): {e}")
+        finally:
+            conn.close()
+
+# --- Función extra necesaria para el botón de "Pagar" ---
+
+def pagar_multa_bd(id_multa):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Actualizamos estado
+            cursor.execute("UPDATE Multa SET Estado = 'Pagado' WHERE Id_multa = %s", (id_multa,))
+            
+            # Y registramos el ingreso en CAJA (importante para el saldo)
+            grupo_id = st.session_state.get('grupo_id')
+            # Recuperamos monto para la caja
+            cursor.execute("SELECT Monto FROM Multa WHERE Id_Multa = %s", (id_multa,))
+            monto = cursor.fetchone()[0]
+            
+            cursor.execute("INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, NOW(), 'Pago de Multa')", 
+                           (grupo_id, monto))
+            
+            conn.commit()
+            st.success("Multa pagada y registrada en caja.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}")
         finally:
             conn.close()
 
