@@ -555,14 +555,15 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
             cursor = conn.cursor()
             grupo_id = st.session_state.get('grupo_id')
             
-            # 1. Insertar en tabla Prestamo
+            # CORRECCIÓN DE NOMBRES AQUÍ TAMBIÉN:
+            # Id_Miembro, Tasa_Interes, Fecha_Inicio
             query_prestamo = """
-                INSERT INTO Prestamo (Id_miembro, Monto, Tasa_interes, Plazo, Fecha_inicio, Estado) 
+                INSERT INTO Prestamo (Id_Miembro, Monto, Tasa_Interes, Plazo, Fecha_Inicio, Estado) 
                 VALUES (%s, %s, %s, %s, %s, 'Activo')
             """
             cursor.execute(query_prestamo, (id_miembro, monto, tasa, plazo, fecha))
             
-            # 2. Registrar la SALIDA de dinero en la tabla Caja
+            # Registrar salida de caja (Este se mantiene igual si tu tabla Caja no ha cambiado)
             query_caja = """
                 INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
                 VALUES (%s, 'Egreso', %s, %s, %s)
@@ -621,15 +622,23 @@ def obtener_prestamos_activos():
             cursor = conn.cursor(dictionary=True)
             grupo_id = st.session_state.get('grupo_id')
             
-            # Traemos datos del préstamo y el nombre del miembro
+            # CORRECCIÓN DE NOMBRES SEGÚN TU IMAGEN:
+            # p.Id_Prestamo (Mayúsculas P)
+            # p.Tasa_Interes (Mayúsculas I)
+            # p.Fecha_Inicio (Mayúsculas I)
+            # p.Id_Miembro (Mayúsculas M en la tabla Prestamo)
+            
             query = """
-                SELECT p.Id_prestamo, p.Monto, p.Tasa_interes, p.Fecha_inicio, m.Nombre as Nombre_Miembro, p.Id_miembro, m.Id_grupo
+                SELECT p.Id_Prestamo, p.Monto, p.Tasa_Interes, p.Fecha_Inicio, 
+                       m.Nombre as Nombre_Miembro, p.Id_Miembro, m.Id_grupo
                 FROM Prestamo p
-                JOIN Miembro m ON p.Id_miembro = m.Id_miembro
+                JOIN Miembro m ON p.Id_Miembro = m.Id_miembro
                 WHERE m.Id_grupo = %s AND p.Estado = 'Activo'
             """
             cursor.execute(query, (grupo_id,))
             data = cursor.fetchall()
+        except Exception as e:
+             st.error(f"Error cargando préstamos: {e}")
         finally:
             conn.close()
     return data
