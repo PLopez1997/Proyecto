@@ -385,134 +385,110 @@ def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
 #----------------------------------------------------
 #PARTE 3 PESTAÑA 3 CAJA Y PRESTAMOS
 #----------------------------------------------------
+#----------------------------------------------------
 
-
-# --- AGREGAR ESTO EN TU MENU PRINCIPAL ---
-# elif choice == "Caja y Préstamos":
-#     gestionar_caja_prestamos()
-
-# --- NUEVA FUNCIÓN PRINCIPAL ---
 
 def gestionar_caja_prestamos():
     st.header("💰 Gestión Financiera: Caja y Créditos")
     
-    # Calculamos el dinero disponible en tiempo real
+    # Calculamos saldo
     saldo_actual = calcular_saldo_disponible()
-    
-    # KPI Principal: Caja Disponible
     st.metric(label="💵 EFECTIVO DISPONIBLE EN CAJA", value=f"${saldo_actual:,.2f}")
     
     tab1, tab2, tab3, tab4 = st.tabs(["➕ Nuevo Préstamo", "📥 Registrar Pago", "⚠️ Multas", "📜 Movimientos de Caja"])
 
-    # --- PESTAÑA 1: SOLICITAR PRÉSTAMO ---
+    # --- PESTAÑA 1: NUEVO PRÉSTAMO ---
     with tab1:
         st.subheader("Otorgar Nuevo Préstamo")
-        
         with st.form("form_prestamo"):
             col1, col2 = st.columns(2)
             with col1:
                 miembros = obtener_lista_miembros_simple()
+                # Ajuste: Id_miembro
                 dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
                 id_miembro = st.selectbox("Solicitante", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
-                
                 monto = st.number_input("Monto Solicitado ($)", min_value=0.0, step=5.0)
-            
             with col2:
-                # Interés mensual típico (ej. 5% o 10%)
-                tasa = st.number_input("Tasa de Interés (%)", min_value=0.0, value=5.0, step=0.1)
-                # Plazo (asumimos meses para simplificar, ajusta según tu regla)
+                tasa = st.number_input("Tasa de Interés (%)", min_value=0.0, value=5.0)
                 plazo = st.number_input("Plazo (meses)", min_value=1, value=6)
                 
             fecha_inicio = st.date_input("Fecha de desembolso")
             
-            # Cálculo informativo para el usuario
-            interes_estimado = monto * (tasa / 100) * plazo
-            total_pagar = monto + interes_estimado
-            st.info(f"📝 Simulación: El miembro pagará ${interes_estimado:.2f} de interés. Total a devolver: ${total_pagar:.2f}")
+            # Simulación
+            interes_est = monto * (tasa / 100) * plazo
+            st.info(f"Total a pagar estimado: ${monto + interes_est:.2f}")
 
-            submitted = st.form_submit_button("Aprobar y Desembolsar")
-            if submitted:
+            if st.form_submit_button("Aprobar y Desembolsar"):
                 if monto > saldo_actual:
-                    st.error(f"⛔ Fondos insuficientes. Solo tienes ${saldo_actual} en caja.")
+                    st.error(f"⛔ Fondos insuficientes (${saldo_actual}).")
                 elif monto <= 0:
-                    st.error("El monto debe ser mayor a 0.")
+                    st.error("El monto debe ser positivo.")
                 else:
                     crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha_inicio)
 
     # --- PESTAÑA 2: REGISTRAR PAGO ---
     with tab2:
         st.subheader("Cobro de Cuotas")
+        prestamos = obtener_prestamos_activos()
         
-        # 1. Buscar préstamos ACTIVOS
-        prestamos_activos = obtener_prestamos_activos()
-        
-        if prestamos_activos:
+        if prestamos:
+            # Ajuste: Id_prestamo
             prestamo_sel = st.selectbox(
-                "Seleccione el Préstamo a abonar:", 
-                options=prestamos_activos,
-                format_func=lambda x: f"{x['Nombre_Miembro']} - Deuda Orig: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
+                "Seleccione Préstamo:", 
+                options=prestamos,
+                format_func=lambda x: f"{x['Nombre_Miembro']} - ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
             )
             
             st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            # Mostramos cuánto ha pagado hasta ahora (necesitaríamos una consulta extra, por ahora simple)
+            c1, c2 = st.columns(2)
             c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
             c2.metric("Tasa Interés", f"{prestamo_sel['Tasa_interes']}%")
             
             with st.form("form_pago"):
                 col_cap, col_int = st.columns(2)
                 with col_cap:
-                    abono_capital = st.number_input("Abono a Capital ($)", min_value=0.0, step=1.0)
+                    abono_capital = st.number_input("Abono a Capital ($)", min_value=0.0)
                 with col_int:
-                    pago_interes = st.number_input("Pago de Interés ($)", min_value=0.0, step=1.0)
+                    pago_interes = st.number_input("Pago de Interés ($)", min_value=0.0)
                 
                 fecha_pago = st.date_input("Fecha de pago")
                 
                 if st.form_submit_button("Registrar Pago"):
-                    if abono_capital == 0 and pago_interes == 0:
-                        st.warning("Debe ingresar al menos un valor.")
-                    else:
-                        registrar_pago_bd(prestamo_sel['Id_prestamo'], abono_capital, pago_interes, fecha_pago, prestamo_sel['Id_grupo'])
+                    # Ajuste: Id_prestamo y Id_grupo
+                    registrar_pago_bd(prestamo_sel['Id_prestamo'], abono_capital, pago_interes, fecha_pago, prestamo_sel['Id_grupo'])
         else:
-            st.info("No hay préstamos activos pendientes de pago.")
+            st.info("No hay préstamos activos.")
 
     # --- PESTAÑA 3: MULTAS ---
     with tab3:
-        st.subheader("Gestión de Multas y Mora")
-        
+        st.subheader("Gestión de Multas")
         col_m1, col_m2 = st.columns(2)
         
         with col_m1:
-            st.markdown("#### 😡 Aplicar Nueva Multa")
-            with st.form("form_multa"):
-                miembro_multa = st.selectbox("Miembro", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x], key="sel_multa")
-                monto_multa = st.number_input("Monto Multa ($)", min_value=1.0, step=0.5)
-                motivo = st.text_input("Motivo (Ej. Llegada tarde, Falta injustificada)")
-                
-                # Opcional: Vincular a reunión si aplica
+            st.markdown("#### 😡 Multa Manual")
+            with st.form("form_multa_manual"):
+                # Ajuste: Id_miembro
+                miembro_m = st.selectbox("Miembro", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
+                monto_m = st.number_input("Monto ($)", min_value=0.50, step=0.25)
+                motivo_m = st.text_input("Motivo", "Mora / Otros")
                 
                 if st.form_submit_button("Aplicar Multa"):
-                    aplicar_multa_bd(miembro_multa, monto_multa, motivo)
+                    aplicar_multa_bd(miembro_m, monto_m, motivo_m)
 
         with col_m2:
-            st.markdown("#### 📋 Multas Pendientes")
+            st.markdown("#### 📋 Pendientes de Pago")
             listar_multas_pendientes()
 
-    # --- PESTAÑA 4: HISTORIAL CAJA ---
+    # --- PESTAÑA 4: CAJA ---
     with tab4:
-        st.subheader("Libro Diario de Caja")
+        st.subheader("Movimientos de Caja")
         ver_movimientos_caja()
 
-# ==========================================
-# FUNCIONES SQL (Backend)
-# ==========================================
+
+# FUNCIONES SQL CORREGIDAS (Formato Id_cosa)
+
 
 def calcular_saldo_disponible():
-    """
-    Calcula: (Ahorros + Pagos Capital + Pagos Interes + Multas Pagadas) - (Prestamos Entregados - Egresos Varios)
-    Nota: Usamos la tabla 'Caja' si registras todo ahí, o sumamos las tablas individuales.
-    Para ser más exactos, sumaremos las tablas operativas.
-    """
     conn = obtener_conexion()
     saldo = 0.0
     if conn:
@@ -520,15 +496,15 @@ def calcular_saldo_disponible():
             cursor = conn.cursor()
             grupo_id = st.session_state.get('grupo_id')
 
-            # 1. Sumar Ahorros
-            cursor.execute("SELECT SUM(Monto) FROM Ahorro JOIN Miembro ON Ahorro.Id_miembro = Miembro.Id_miembro WHERE Miembro.Id_grupo = %s", (grupo_id,))
+            # 1. Sumar Ahorros (Tabla Ahorro, Columna Id_miembro)
+            cursor.execute("""
+                SELECT SUM(a.Monto) FROM Ahorro a 
+                JOIN Miembro m ON a.Id_miembro = m.Id_miembro 
+                WHERE m.Id_grupo = %s
+            """, (grupo_id,))
             res_ahorro = cursor.fetchone()[0] or 0.0
 
-            # 2. Sumar Pagos (Capital + Interes) de préstamos de este grupo
-            # (Requiere JOIN complejo, simplificamos asumiendo que el pago tiene fecha y logica)
-            # Para simplificar y no hacer queries gigantes, usaremos la tabla CAJA si está bien llevada.
-            # PERO, como estamos construyendo el sistema, lo mejor es sumar la tabla CAJA directamente.
-            
+            # 2. Sumar Caja (Tabla Caja, Columna Id_grupo)
             cursor.execute("SELECT Tipo_transaccion, Monto FROM Caja WHERE Id_grupo = %s", (grupo_id,))
             movimientos = cursor.fetchall()
             
@@ -538,12 +514,11 @@ def calcular_saldo_disponible():
                 elif tipo == 'Egreso':
                     saldo -= monto
             
-            # Ajuste inicial: Si la caja está vacía, asumimos que el saldo es la suma de ahorros (si no se han registrado en caja aún)
             if not movimientos and res_ahorro > 0:
                 saldo = res_ahorro 
 
         except Exception as e:
-            st.error(f"Error calculando saldo: {e}")
+            st.error(f"Error saldo: {e}")
         finally:
             conn.close()
     return saldo
@@ -555,27 +530,22 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
             cursor = conn.cursor()
             grupo_id = st.session_state.get('grupo_id')
             
-            # CORRECCIÓN DE NOMBRES AQUÍ TAMBIÉN:
-            # Id_Miembro, Tasa_Interes, Fecha_Inicio
-            query_prestamo = """
-                INSERT INTO Prestamo (Id_Miembro, Monto, Tasa_Interes, Plazo, Fecha_Inicio, Estado) 
+            # FORMATO Id_cosa: Id_miembro, Tasa_interes, Fecha_inicio
+            query_p = """
+                INSERT INTO Prestamo (Id_miembro, Monto, Tasa_interes, Plazo, Fecha_inicio, Estado) 
                 VALUES (%s, %s, %s, %s, %s, 'Activo')
             """
-            cursor.execute(query_prestamo, (id_miembro, monto, tasa, plazo, fecha))
+            cursor.execute(query_p, (id_miembro, monto, tasa, plazo, fecha))
             
-            # Registrar salida de caja (Este se mantiene igual si tu tabla Caja no ha cambiado)
-            query_caja = """
-                INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
-                VALUES (%s, 'Egreso', %s, %s, %s)
-            """
-            detalle = f"Préstamo a miembro ID {id_miembro}"
-            cursor.execute(query_caja, (grupo_id, monto, fecha, detalle))
+            # Tabla Caja: Id_grupo
+            query_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Egreso', %s, %s, %s)"
+            cursor.execute(query_c, (grupo_id, monto, fecha, f"Préstamo a ID {id_miembro}"))
             
             conn.commit()
-            st.success("✅ Préstamo otorgado y desembolsado de caja.")
+            st.success("✅ Préstamo creado.")
             st.rerun()
         except Exception as e:
-            st.error(f"Error al crear préstamo: {e}")
+            st.error(f"Error crear préstamo: {e}")
         finally:
             conn.close()
 
@@ -585,32 +555,20 @@ def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo):
         try:
             cursor = conn.cursor()
             
-            # 1. Insertar en tabla Pago
-            # Nota: Tu tabla Pago en la foto tiene Monto_capital y Monto_interes? 
-            # Si no, ajusta los campos. Asumo que sí por lógica contable.
-            query_pago = """
-                INSERT INTO Pago (Id_prestamo, Monto_capital, Monto_interes, Fecha) 
-                VALUES (%s, %s, %s, %s)
-            """
-            cursor.execute(query_pago, (id_prestamo, capital, interes, fecha))
+            # FORMATO Id_cosa: Id_prestamo, Monto_capital, Monto_interes
+            query_p = "INSERT INTO Pago (Id_prestamo, Monto_capital, Monto_interes, Fecha) VALUES (%s, %s, %s, %s)"
+            cursor.execute(query_p, (id_prestamo, capital, interes, fecha))
             
-            # 2. Registrar el INGRESO en Caja
-            total_recibido = capital + interes
-            query_caja = """
-                INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
-                VALUES (%s, 'Ingreso', %s, %s, %s)
-            """
-            detalle = f"Pago Prestamo ID {id_prestamo} (C:${capital} I:${interes})"
-            cursor.execute(query_caja, (id_grupo, total_recibido, fecha, detalle))
-            
-            # 3. Opcional: Verificar si el préstamo se saldó (requiere calcular saldos)
-            # Por ahora lo dejamos activo.
+            # Tabla Caja: Id_grupo
+            total = capital + interes
+            query_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, %s, %s)"
+            cursor.execute(query_c, (id_grupo, total, fecha, f"Pago Préstamo ID {id_prestamo}"))
             
             conn.commit()
-            st.success(f"✅ Pago de ${total_recibido} registrado correctamente.")
+            st.success("✅ Pago registrado.")
             st.rerun()
         except Exception as e:
-            st.error(f"Error al registrar pago: {e}")
+            st.error(f"Error pago: {e}")
         finally:
             conn.close()
 
@@ -622,23 +580,16 @@ def obtener_prestamos_activos():
             cursor = conn.cursor(dictionary=True)
             grupo_id = st.session_state.get('grupo_id')
             
-            # CORRECCIÓN DE NOMBRES SEGÚN TU IMAGEN:
-            # p.Id_Prestamo (Mayúsculas P)
-            # p.Tasa_Interes (Mayúsculas I)
-            # p.Fecha_Inicio (Mayúsculas I)
-            # p.Id_Miembro (Mayúsculas M en la tabla Prestamo)
-            
+            # FORMATO Id_cosa: Id_prestamo, Tasa_interes, Fecha_inicio, Id_miembro
             query = """
-                SELECT p.Id_Prestamo, p.Monto, p.Tasa_Interes, p.Fecha_Inicio, 
-                       m.Nombre as Nombre_Miembro, p.Id_Miembro, m.Id_grupo
+                SELECT p.Id_prestamo, p.Monto, p.Tasa_interes, p.Fecha_inicio, 
+                       m.Nombre as Nombre_Miembro, p.Id_miembro, m.Id_grupo
                 FROM Prestamo p
-                JOIN Miembro m ON p.Id_Miembro = m.Id_miembro
+                JOIN Miembro m ON p.Id_miembro = m.Id_miembro
                 WHERE m.Id_grupo = %s AND p.Estado = 'Activo'
             """
             cursor.execute(query, (grupo_id,))
             data = cursor.fetchall()
-        except Exception as e:
-             st.error(f"Error cargando préstamos: {e}")
         finally:
             conn.close()
     return data
@@ -648,14 +599,13 @@ def aplicar_multa_bd(id_miembro, monto, motivo):
     if conn:
         try:
             cursor = conn.cursor()
-            # AJUSTE DE NOMBRES: Id_Miembro (con M mayúscula)
-            query = "INSERT INTO Multa (Id_Miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, 'Pendiente')"
+            # FORMATO Id_cosa: Id_miembro
+            query = "INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, 'Pendiente')"
             cursor.execute(query, (id_miembro, monto, motivo))
             conn.commit()
             st.toast("Multa aplicada.")
-            st.rerun()
         except Exception as e:
-            st.error(f"Error al aplicar multa: {e}")
+            st.error(f"Error multa: {e}")
         finally:
             conn.close()
 
@@ -665,6 +615,7 @@ def listar_multas_pendientes():
         try:
             grupo_id = st.session_state.get('grupo_id')
             
+            # FORMATO Id_cosa: Id_multa, Id_miembro
             query = """
                 SELECT mu.Id_multa, m.Nombre, mu.Monto, mu.Motivo 
                 FROM Multa mu
@@ -674,44 +625,43 @@ def listar_multas_pendientes():
             df = pd.read_sql(query, conn, params=(grupo_id,))
             
             if not df.empty:
-                # Opcional: Botón para pagar multa
                 st.dataframe(df, use_container_width=True)
-                
-                # Selector para pagar multas
-                multa_a_pagar = st.selectbox("Seleccionar Multa para Pagar", options=df['Id_multa'], key="sel_pagar_multa")
-                if st.button("Marcar como Pagada"):
-                    pagar_multa_bd(multa_a_pagar)
+                # Selector usando Id_multa
+                id_pagar = st.selectbox("Pagar Multa ID:", df['Id_multa'])
+                if st.button("Marcar Pagada"):
+                    pagar_multa_bd(id_pagar)
             else:
-                st.info("🎉 No hay multas pendientes.")
+                st.info("No hay multas pendientes.")
         except Exception as e:
-            st.error(f"Error SQL (Verifica nombres de columnas en BD): {e}")
+            st.error(f"Error listando multas: {e}")
         finally:
             conn.close()
-
-# --- Función extra necesaria para el botón de "Pagar" ---
 
 def pagar_multa_bd(id_multa):
     conn = obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
-            # Actualizamos estado
-            cursor.execute("UPDATE Multa SET Estado = 'Pagado' WHERE Id_multa = %s", (id_multa,))
-            
-            # Y registramos el ingreso en CAJA (importante para el saldo)
             grupo_id = st.session_state.get('grupo_id')
-            # Recuperamos monto para la caja
-            cursor.execute("SELECT Monto FROM Multa WHERE Id_Multa = %s", (id_multa,))
-            monto = cursor.fetchone()[0]
             
-            cursor.execute("INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, NOW(), 'Pago de Multa')", 
-                           (grupo_id, monto))
-            
-            conn.commit()
-            st.success("Multa pagada y registrada en caja.")
-            st.rerun()
+            # 1. Obtener monto antes de actualizar
+            # FORMATO Id_cosa: Id_multa
+            cursor.execute("SELECT Monto FROM Multa WHERE Id_multa = %s", (id_multa,))
+            row = cursor.fetchone()
+            if row:
+                monto = row[0]
+                
+                # 2. Actualizar estado
+                cursor.execute("UPDATE Multa SET Estado = 'Pagado' WHERE Id_multa = %s", (id_multa,))
+                
+                # 3. Ingreso a Caja
+                cursor.execute("INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, NOW(), 'Pago Multa')", (grupo_id, monto))
+                
+                conn.commit()
+                st.success("Multa pagada.")
+                st.rerun()
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Error pagando multa: {e}")
         finally:
             conn.close()
 
@@ -726,4 +676,57 @@ def ver_movimientos_caja():
         finally:
             conn.close()
 
+#Asistencia
 
+def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
+    conn = obtener_conexion()
+    
+    # --- CONFIGURACIÓN DE MULTAS AUTOMÁTICAS ---
+    MONTO_AUSENCIA = 1.00  # Costo por inasistencia
+    MONTO_EXCUSADO = 0.50  # Costo por excusa (si aplica)
+    
+    if conn:
+        try:
+            cursor = conn.cursor()
+            
+            # 1. Insertar Asistencia (Id_reunion, Id_miembro)
+            query_asist = "INSERT INTO Asistencia (Id_reunion, Id_miembro, Estado) VALUES (%s, %s, %s)"
+            
+            valores_asistencia = []
+            multas_automaticas = []
+            
+            for id_miembro, estado in diccionario_asistencia.items():
+                # Preparamos dato para tabla Asistencia
+                valores_asistencia.append((id_reunion, id_miembro, estado))
+                
+                # LÓGICA DE MULTA AUTOMÁTICA 
+                if estado == "Ausente":
+                    # (Id_miembro, Monto, Motivo, Estado)
+                    multas_automaticas.append((id_miembro, MONTO_AUSENCIA, "Inasistencia Automática", "Pendiente"))
+                    
+                elif estado == "Excusado":
+                    multas_automaticas.append((id_miembro, MONTO_EXCUSADO, "Ausencia Justificada", "Pendiente"))
+            
+            # Ejecutamos inserción masiva de asistencias
+            cursor.executemany(query_asist, valores_asistencia)
+            
+            # 2. Crear Multas Automáticas (si existen)
+            if multas_automaticas:
+                query_multa = "INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, %s)"
+                cursor.executemany(query_multa, multas_automaticas)
+            
+            conn.commit()
+            
+            # Mensaje informativo
+            msg = "✅ Asistencia guardada."
+            if multas_automaticas:
+                msg += f" Se generaron {len(multas_automaticas)} multas automáticas."
+            st.toast(msg)
+            
+        except Exception as e:
+            if "1062" in str(e):
+                st.error("Error: Ya se tomó asistencia para esta reunión.")
+            else:
+                st.error(f"Error al guardar asistencia: {e}")
+        finally:
+            conn.close()
