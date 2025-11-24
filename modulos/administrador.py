@@ -590,15 +590,17 @@ def registrar_promotora_form():
         st.error("No hay conexión a la base de datos.")
         return
     
-    # Cargar distritos para el selector
+    # 1. Cargar los Distritos disponibles (1, 2, 3...)
     df_distritos = pd.DataFrame()
     try:
+        # Traemos ID y Nombre para que sepas cuál es cuál
         df_distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
-    except:
-        pass # Si la tabla no existe, se manejará abajo
+    except Exception as e:
+        st.error(f"Error al leer tabla Distrito: {e}")
     finally:
         conn.close()
     
+    # 2. Formulario de Registro
     with st.form("form_promotora"):
         c1, c2 = st.columns(2)
         with c1:
@@ -607,35 +609,48 @@ def registrar_promotora_form():
             contacto = st.text_input("Contacto (Teléfono/Email)")
         
         id_distrito = None
+        
+        # VERIFICACIÓN DE DISTRITOS
         if not df_distritos.empty:
-            # Diccionario para el selector: {ID: Nombre}
-            lista_d = {r['Id_distrito']: r['Nombre'] for i, r in df_distritos.iterrows()}
-            id_distrito = st.selectbox("Asignar Distrito:", options=lista_d.keys(), format_func=lambda x: lista_d[x])
-        else:
-            st.warning("No hay distritos creados. Se registrará sin distrito.")
+            st.markdown("##### 📍 Asignación de Distrito")
+            # Creamos un diccionario para el selector: {ID: "Distrito X - Nombre"}
+            lista_d = {
+                r['Id_distrito']: f"Distrito {r['Id_distrito']} - {r['Nombre']}" 
+                for i, r in df_distritos.iterrows()
+            }
             
+            # El selector devuelve el ID (1, 2, 3...)
+            id_distrito = st.selectbox(
+                "Seleccione el Distrito:", 
+                options=lista_d.keys(), 
+                format_func=lambda x: lista_d[x]
+            )
+        else:
+            st.warning("⚠️ ALERTA: No existen Distritos (1, 2, 3) registrados en el sistema.")
+            st.info("Por favor, vaya a la pestaña 'Grupos y Distritos' y cree los distritos primero.")
+            
+        # BOTÓN DE GUARDADO
         if st.form_submit_button("Guardar Promotora"):
-            if nombre:
-                guardar_promotora_bd(nombre, id_distrito, contacto)
+            if not nombre:
+                st.error("⛔ El nombre es obligatorio.")
+            elif id_distrito is None:
+                st.error("⛔ Es obligatorio asignar un Distrito (1, 2 o 3). Si no aparecen, debe crearlos primero.")
             else:
-                st.error("El nombre es obligatorio.")
+                # Si todo está bien, guardamos
+                guardar_promotora_bd(nombre, id_distrito, contacto)
 
-# ==========================================
-# FUNCIÓN SQL: GUARDAR
-# ==========================================
+# (Asegúrate de tener esta función auxiliar también en el archivo)
 def guardar_promotora_bd(nombre, id_distrito, contacto):
     conn = obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
-            # Insertamos Nombre, Distrito y Contacto
-            # Asegúrate de que tu tabla Promotora tenga estas columnas
             query = "INSERT INTO Promotora (Nombre, Id_distrito, Contacto) VALUES (%s, %s, %s)"
             cursor.execute(query, (nombre, id_distrito, contacto))
             conn.commit()
             
-            st.success(f"✅ Promotora '{nombre}' registrada con éxito.")
-            st.info("Siguiente paso: Ve a 'Gestión de Usuarios' y crea su login seleccionando el rol 'Promotora'.")
+            st.success(f"✅ Promotora '{nombre}' registrada exitosamente en el Distrito {id_distrito}.")
+            st.info("Siguiente paso: Crear su usuario de acceso en la pestaña 'Gestión de Usuarios'.")
             
         except Exception as e:
             st.error(f"Error al guardar en BD: {e}")
