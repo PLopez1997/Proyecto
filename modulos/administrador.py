@@ -116,6 +116,7 @@ def create_user_form():
     st.subheader("Registrar Credenciales")
     st.info("Crea un usuario y contraseña para que un miembro, directiva o promotora pueda entrar al sistema.")
 
+    # 1. CARGAMOS DATOS REALES DE LA BD
     conn = obtener_conexion()
     if not conn:
         st.error("Sin conexión a BD")
@@ -125,7 +126,7 @@ def create_user_form():
     df_promotoras = pd.DataFrame()
 
     try:
-        # 1. Cargar Miembros (para Directiva y Miembros)
+        # Cargar Miembros con sus Grupos
         query_miembros = """
             SELECT m.Id_miembro, m.Nombre, m.`DUI/Identificación` as DUI, m.Id_grupo, g.Nombre as NombreGrupo
             FROM Miembro m
@@ -133,8 +134,7 @@ def create_user_form():
         """
         df_miembros = pd.read_sql(query_miembros, conn)
 
-        # 2. Cargar Promotoras (para Rol Promotora)
-        # Asumimos que existe la tabla Promotora vinculada a Distrito
+        # Cargar Promotoras
         try:
             query_promotoras = """
                 SELECT p.Id_promotora, p.Nombre, p.Id_distrito, d.Nombre as NombreDistrito 
@@ -143,86 +143,88 @@ def create_user_form():
             """
             df_promotoras = pd.read_sql(query_promotoras, conn)
         except:
-            pass # Si no existe la tabla, quedará vacío
+            pass
 
     except Exception as e:
         st.error(f"Error cargando datos auxiliares: {e}")
     finally:
         conn.close()
 
-    # --- FORMULARIO ---
-    with st.form("form_new_user"):
-        c1, c2 = st.columns(2)
-        new_username = c1.text_input("Usuario (Login)")
-        new_password = c2.text_input("Contraseña", type="password")
-        
-        roles_disponibles = ['miembro', 'junta directiva', 'promotora', 'administrador']
-        new_rol = st.selectbox("Rol del Usuario", roles_disponibles)
+    # --- FORMULARIO INTERACTIVO (SIN st.form PARA PERMITIR DINAMISMO) ---
+    
+    c1, c2 = st.columns(2)
+    new_username = c1.text_input("Usuario (Login)")
+    new_password = c2.text_input("Contraseña", type="password")
+    
+    roles_disponibles = ['miembro', 'junta directiva', 'promotora', 'administrador']
+    new_rol = st.selectbox("Rol del Usuario", roles_disponibles)
 
-        # Variables para guardar los IDs
-        id_miembro_final = None
-        id_grupo_final = None
-        id_promotora_final = None
-        id_distrito_final = None
+    # Variables para guardar los IDs
+    id_miembro_final = None
+    id_grupo_final = None
+    id_promotora_final = None
+    id_distrito_final = None
 
-        st.markdown("---")
+    st.markdown("---")
 
-        # === LÓGICA A: MIEMBRO O DIRECTIVA ===
-        if new_rol in ("junta directiva", "miembro"):
-            if not df_miembros.empty:
-                st.write(f"👤 **Vincular a Miembro del GAPC:**")
+    # === LÓGICA A: MIEMBRO O DIRECTIVA ===
+    if new_rol in ("junta directiva", "miembro"):
+        if not df_miembros.empty:
+            st.write(f"👤 **Vincular a Miembro del GAPC:**")
+            
+            lista_opciones = {
+                row['Id_miembro']: f"{row['Nombre']} - {row['NombreGrupo']}"
+                for i, row in df_miembros.iterrows()
+            }
+            # Al estar fuera de un form, esto actualiza la variable inmediatamente
+            id_sel = st.selectbox("Seleccionar Persona:", options=lista_opciones.keys(), format_func=lambda x: lista_opciones[x])
+            
+            if id_sel:
+                id_miembro_final = id_sel
+                # Autocompletar Grupo
+                fila = df_miembros[df_miembros['Id_miembro'] == id_sel].iloc[0]
+                id_grupo_final = int(fila['Id_grupo'])
+                st.info(f"✅ Se vinculará al **ID Miembro: {id_miembro_final}** del Grupo **{fila['NombreGrupo']}**")
+        else:
+            st.warning("No hay miembros registrados.")
+
+    # === LÓGICA B: PROMOTORA ===
+    elif new_rol == 'promotora':
+        if not df_promotoras.empty:
+            st.write(f"👩‍💼 **Vincular a una Promotora:**")
+            
+            lista_prom = {
+                row['Id_promotora']: f"{row['Nombre']} (Distrito: {row['NombreDistrito']})"
+                for i, row in df_promotoras.iterrows()
+            }
+            id_prom_sel = st.selectbox("Seleccionar Promotora:", options=lista_prom.keys(), format_func=lambda x: lista_prom[x])
+            
+            if id_prom_sel:
+                id_promotora_final = id_prom_sel
+                # Autocompletar Distrito
+                fila_p = df_promotoras[df_promotoras['Id_promotora'] == id_prom_sel].iloc[0]
                 
-                lista_opciones = {
-                    row['Id_miembro']: f"{row['Nombre']} - {row['NombreGrupo']}"
-                    for i, row in df_miembros.iterrows()
-                }
-                id_sel = st.selectbox("Seleccionar Persona:", options=lista_opciones.keys(), format_func=lambda x: lista_opciones[x])
-                
-                if id_sel:
-                    id_miembro_final = id_sel
-                    # Autocompletar Grupo
-                    fila = df_miembros[df_miembros['Id_miembro'] == id_sel].iloc[0]
-                    id_grupo_final = int(fila['Id_grupo'])
-                    st.info(f"✅ Se vinculará al **ID Miembro: {id_miembro_final}** del Grupo **{fila['NombreGrupo']}**")
-            else:
-                st.warning("No hay miembros registrados.")
+                if pd.notna(fila_p['Id_distrito']):
+                    id_distrito_final = int(fila_p['Id_distrito'])
+                    st.info(f"✅ Se vinculará al **ID Promotora: {id_promotora_final}** del Distrito **{fila_p['NombreDistrito']}**")
+                else:
+                    st.warning("Esta promotora no tiene distrito asignado.")
+        else:
+            st.warning("⚠️ No hay registros en la tabla 'Promotora'.")
 
-        # === LÓGICA B: PROMOTORA ===
-        elif new_rol == 'promotora':
-            if not df_promotoras.empty:
-                st.write(f"👩‍💼 **Vincular a una Promotora:**")
-                
-                lista_prom = {
-                    row['Id_promotora']: f"{row['Nombre']} (Distrito: {row['NombreDistrito']})"
-                    for i, row in df_promotoras.iterrows()
-                }
-                id_prom_sel = st.selectbox("Seleccionar Promotora:", options=lista_prom.keys(), format_func=lambda x: lista_prom[x])
-                
-                if id_prom_sel:
-                    id_promotora_final = id_prom_sel
-                    # Autocompletar Distrito
-                    fila_p = df_promotoras[df_promotoras['Id_promotora'] == id_prom_sel].iloc[0]
-                    
-                    # Manejo seguro si el distrito es nulo
-                    if pd.notna(fila_p['Id_distrito']):
-                        id_distrito_final = int(fila_p['Id_distrito'])
-                        st.info(f"✅ Se vinculará al **ID Promotora: {id_promotora_final}** del Distrito **{fila_p['NombreDistrito']}**")
-                    else:
-                        st.warning("Esta promotora no tiene distrito asignado.")
-            else:
-                st.warning("⚠️ No hay registros en la tabla 'Promotora'.")
-                st.caption("Agregue promotoras en la base de datos o cree un módulo para registrarlas.")
-
-        # === BOTÓN GUARDAR ===
-        if st.form_submit_button("Crear Usuario"):
-            if new_username and new_password:
-                guardar_usuario_bd(
-                    new_username, new_password, new_rol, 
-                    id_miembro_final, id_grupo_final, 
-                    id_promotora_final, id_distrito_final
-                )
-            else:
-                st.error("Usuario y contraseña requeridos.")
+    st.markdown("---")
+    
+    # === BOTÓN DE GUARDADO ===
+    # Usamos un botón normal. Al hacer clic, toma los valores actuales de las variables de arriba.
+    if st.button("Crear Usuario", type="primary"):
+        if new_username and new_password:
+            guardar_usuario_bd(
+                new_username, new_password, new_rol, 
+                id_miembro_final, id_grupo_final, 
+                id_promotora_final, id_distrito_final
+            )
+        else:
+            st.error("Usuario y contraseña requeridos.")
 
 def guardar_usuario_bd(usuario, password, rol, id_miembro, id_grupo, id_promotora, id_distrito):
     conn = obtener_conexion()
@@ -236,14 +238,13 @@ def guardar_usuario_bd(usuario, password, rol, id_miembro, id_grupo, id_promotor
                 st.error("El usuario ya existe.")
                 return
 
-            # INSERT con todos los campos posibles
-            # Asegúrate de haber agregado Id_promotora a tu tabla Login
+            # INSERT
             query = """
                 INSERT INTO Login (Usuario, Contraseña, Rol, Id_miembro, Id_grupo, Id_promotora, Id_distrito) 
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             
-            # Limpieza de datos (None para SQL NULL)
+            # Limpieza de datos
             id_m = int(id_miembro) if id_miembro else None
             id_g = int(id_grupo) if id_grupo else None
             id_p = int(id_promotora) if id_promotora else None
@@ -263,14 +264,14 @@ def listar_usuarios():
     if conn:
         try:
             st.subheader("Usuarios del Sistema")
-            # Ajusta la query si aún no has creado Id_promotora en Login
-            # Si da error, quita 'Id_promotora' de este select temporalmente
+            # Ajusta la query según las columnas que tengas creadas
             df = pd.read_sql("SELECT Id_usuario, Usuario, Rol, Id_miembro, Id_promotora, Id_grupo FROM Login", conn)
             st.dataframe(df, use_container_width=True)
         except Exception as e:
-            st.error("Error al listar (¿Ya agregaste la columna Id_promotora a Login?): " + str(e))
+            st.error("Error al listar: " + str(e))
         finally:
             conn.close()
+
 
 # -----------------------
 # CREAR CICLO (ya SIN vínculo a grupo)
