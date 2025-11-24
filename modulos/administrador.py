@@ -74,22 +74,59 @@ def fetch_referencia_data():
         else:
             ref["ciclos"] = pd.DataFrame({"Id_ciclo":[],"Nombre":[]})
 
-        # Grupos
-        if grupo_table:
-            cols = table_columns(conn, grupo_table)
-            id_col = pick_column(cols, ["Id_grupo","id_grupo","Id_cliente","Id","Id_cliente"]) 
-            label_col = pick_column(cols, ["Nombre","nombre","Descripcion","descripcion","Grupo"]) 
-            if id_col and label_col:
-                ref["grupos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_grupo, `{label_col}` AS Nombre FROM `{grupo_table}`", conn)
-            elif id_col:
-                ref["grupos"] = pd.read_sql(f"SELECT `{id_col}` AS Id_grupo FROM `{grupo_table}`", conn)
-                ref["grupos"]["Nombre"] = ref["grupos"]["Id_grupo"].astype(str)
-            else:
-                ref["grupos"] = pd.DataFrame({"Id_grupo":[],"Nombre":[]})
-        else:
-            ref["grupos"] = pd.DataFrame({"Id_grupo":[],"Nombre":[]})
+       # Grupos
+if grupo_table:
 
-        return ref
+    cols = table_columns(conn, grupo_table)
+
+    id_col = pick_column(cols, ["Id_grupo","id_grupo","Id_cliente","Id","Id_cliente"]) 
+    label_col = pick_column(cols, ["Nombre","nombre","Descripcion","descripcion","Grupo"]) 
+
+    # --- NUEVO: Asignación de distrito al crear un grupo ---
+    st.subheader("➕ Crear nuevo grupo")
+
+    nuevo_nombre = st.text_input("Nombre del Grupo:")
+    nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
+
+    if st.button("Guardar Grupo"):
+
+        if nuevo_nombre.strip() == "":
+            st.error("Debe ingresar un nombre para el grupo.")
+        else:
+            try:
+                cur = conn.cursor()
+                insert_query = f"""
+                    INSERT INTO `{grupo_table}` (Nombre, Id_distrito)
+                    VALUES (%s, %s)
+                """
+                cur.execute(insert_query, (nuevo_nombre, nuevo_distrito))
+                conn.commit()
+                st.success("Grupo creado exitosamente.")
+            except Exception as e:
+                st.error(f"Error al guardar el grupo: {e}")
+
+    # ---- LECTURA NORMAL DE GRUPOS (No se altera) ----
+    if id_col and label_col:
+        ref["grupos"] = pd.read_sql(
+            f"SELECT `{id_col}` AS Id_grupo, `{label_col}` AS Nombre, Id_distrito FROM `{grupo_table}`",
+            conn
+        )
+
+    elif id_col:
+        ref["grupos"] = pd.read_sql(
+            f"SELECT `{id_col}` AS Id_grupo, Id_distrito FROM `{grupo_table}`",
+            conn
+        )
+        ref["grupos"]["Nombre"] = ref["grupos"]["Id_grupo"].astype(str)
+
+    else:
+        ref["grupos"] = pd.DataFrame({"Id_grupo": [], "Nombre": [], "Id_distrito": []})
+
+else:
+    ref["grupos"] = pd.DataFrame({"Id_grupo": [], "Nombre": [], "Id_distrito": []})
+
+return ref
+
 
     except Exception as e:
         st.warning(f"No se pudieron cargar datos de referencia. Error: {e}")
