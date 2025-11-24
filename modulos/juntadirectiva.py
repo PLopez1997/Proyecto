@@ -494,18 +494,16 @@ def calcular_saldo_disponible():
     if conn:
         try:
             cursor = conn.cursor()
-            grupo_id = st.session_state.get('grupo_id')
-
-            # 1. Sumar Ahorros (Tabla Ahorro, Columna Id_miembro)
-            cursor.execute("""
-                SELECT SUM(a.Monto) FROM Ahorro a 
-                JOIN Miembro m ON a.Id_miembro = m.Id_miembro 
-                WHERE m.Id_grupo = %s
-            """, (grupo_id,))
+            
+            # --- CAMBIO LÓGICO: CAJA ÚNICA ---
+            # Ya no usamos "WHERE Id_grupo = %s" porque el dinero es comunal.
+            
+            # 1. Sumar TODOS los Ahorros de TODOS los grupos
+            cursor.execute("SELECT SUM(Monto) FROM Ahorro")
             res_ahorro = cursor.fetchone()[0] or 0.0
 
-            # 2. Sumar Caja (Tabla Caja, Columna Id_grupo)
-            cursor.execute("SELECT Tipo_transaccion, Monto FROM Caja WHERE Id_grupo = %s", (grupo_id,))
+            # 2. Sumar TODOS los Movimientos de Caja (Ingresos y Egresos globales)
+            cursor.execute("SELECT Tipo_transaccion, Monto FROM Caja")
             movimientos = cursor.fetchall()
             
             for tipo, monto in movimientos:
@@ -514,11 +512,12 @@ def calcular_saldo_disponible():
                 elif tipo == 'Egreso':
                     saldo -= monto
             
+            # Si la caja está vacía (inicio del sistema), el saldo es la suma de ahorros iniciales
             if not movimientos and res_ahorro > 0:
                 saldo = res_ahorro 
 
         except Exception as e:
-            st.error(f"Error saldo: {e}")
+            st.error(f"Error calculando saldo global: {e}")
         finally:
             conn.close()
     return saldo
