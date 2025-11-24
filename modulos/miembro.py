@@ -66,18 +66,31 @@ def miembro_page():
                     else:
                         c4.info(f"⚪ {estado}")
                     
-                    # Barra de progreso
-                    pagado = obtener_pagado_por_prestamo(row['Id_prestamo'])
-                    
-                    # Cálculo estimado de deuda total (Capital + Interés simple)
+                    # --- CÁLCULOS CONVERSIÓN A FLOAT (SOLUCIÓN DEL ERROR) ---
                     try:
-                        interes_total = row['Monto'] * (row['Interes']/100) * row['Plazo']
-                    except:
-                        interes_total = 0
-                    total_deuda = row['Monto'] + interes_total
-                    
-                    progreso = min(pagado / total_deuda, 1.0) if total_deuda > 0 else 0
-                    st.progress(progreso, text=f"Pagado: ${pagado:,.2f} / Total estimado: ${total_deuda:,.2f}")
+                        # Convertimos explícitamente a float para evitar conflictos Decimal vs Float
+                        monto_p = float(row['Monto'])
+                        interes_p = float(row['Interes'])
+                        plazo_p = float(row['Plazo'])
+                        
+                        # Recuperamos lo pagado
+                        pagado = float(obtener_pagado_por_prestamo(row['Id_prestamo']))
+                        
+                        # Cálculo estimado de deuda total (Capital + Interés simple)
+                        interes_total = monto_p * (interes_p / 100.0) * plazo_p
+                        total_deuda = monto_p + interes_total
+                        
+                        # Cálculo seguro del progreso (evitando división por cero)
+                        if total_deuda > 0:
+                            progreso = min(pagado / total_deuda, 1.0)
+                        else:
+                            progreso = 0.0
+                            
+                        st.progress(progreso, text=f"Pagado: ${pagado:,.2f} / Total estimado: ${total_deuda:,.2f}")
+                        
+                    except Exception as e:
+                        st.warning(f"No se pudo calcular el progreso visual: {e}")
+
         else:
             st.info("No has solicitado préstamos.")
 
@@ -121,7 +134,7 @@ def obtener_total_ahorro(id_miembro):
             cursor.execute("SELECT SUM(Monto) FROM Ahorro WHERE Id_miembro = %s", (id_miembro,))
             res = cursor.fetchone()
             if res and res[0]:
-                total = res[0]
+                total = float(res[0]) # Convertimos a float
         except Exception as e:
             st.error(f"Error SQL Ahorro: {e}")
         finally:
@@ -137,10 +150,9 @@ def obtener_deuda_actual(id_miembro):
             # 1. Suma de lo prestado
             cursor.execute("SELECT SUM(Monto) FROM Prestamo WHERE Id_miembro = %s AND Estado = 'Activo'", (id_miembro,))
             res = cursor.fetchone()
-            prestado = res[0] if res and res[0] else 0.0
+            prestado = float(res[0]) if res and res[0] else 0.0
             
             # 2. Suma de lo pagado (Capital)
-            # CAMBIO: Usamos la tabla 'Pagos' (plural)
             query_pagos = """
                 SELECT SUM(pg.Monto_capital) 
                 FROM Pagos pg
@@ -149,7 +161,7 @@ def obtener_deuda_actual(id_miembro):
             """
             cursor.execute(query_pagos, (id_miembro,))
             res_pagos = cursor.fetchone()
-            pagado = res_pagos[0] if res_pagos and res_pagos[0] else 0.0
+            pagado = float(res_pagos[0]) if res_pagos and res_pagos[0] else 0.0
             
             deuda = prestado - pagado
         except Exception as e:
@@ -167,7 +179,7 @@ def obtener_multas_pendientes(id_miembro):
             cursor.execute("SELECT SUM(Monto) FROM Multa WHERE Id_miembro = %s AND Estado = 'Pendiente'", (id_miembro,))
             res = cursor.fetchone()
             if res and res[0]:
-                total = res[0]
+                total = float(res[0]) # Convertimos a float
         except Exception as e:
             st.error(f"Error SQL Multas: {e}")
         finally:
@@ -213,9 +225,10 @@ def obtener_pagado_por_prestamo(id_prestamo):
             cursor.execute("SELECT SUM(Monto_capital + Monto_interes) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
             res = cursor.fetchone()
             if res and res[0]:
-                total = res[0]
+                total = float(res[0]) # Convertimos a float
         except Exception as e:
-            st.error(f"Error Pagos: {e}")
+            # st.error(f"Error Pagos: {e}") # Opcional: comentar si molesta visualmente
+            pass
         finally:
             conn.close()
     return total
