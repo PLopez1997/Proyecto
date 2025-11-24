@@ -4,35 +4,28 @@ from datetime import date
 import sys
 import os
 
-# --- INICIO DEL BLOQUE DE ARREGLO DE RUTAS ---
-# 1. Obtenemos la ruta absoluta de la carpeta donde está este archivo (modulos)
+# --- ARREGLO DE RUTAS ---
+# Esto permite que Python vea los archivos que están afuera de la carpeta 'modulos'
 current_dir = os.path.dirname(os.path.abspath(__file__))
-
-# 2. Obtenemos la ruta de la carpeta PADRE (la raíz de tu proyecto)
 parent_dir = os.path.dirname(current_dir)
-
-# 3. Agregamos ambas rutas al sistema de búsqueda de Python
 if parent_dir not in sys.path:
-    sys.path.append(parent_dir)
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-# --- FIN DEL BLOQUE ---
+    sys.path.insert(0, parent_dir)
 
-# AHORA SÍ hacemos los imports de tus archivos
+# --- IMPORTACIÓN CORRECTA ---
+# Como tu archivo se llama 'conexion.py', debemos importar 'conexion'
 try:
     from conexion import create_connection
-except ImportError:
-    # Intento alternativo por si Streamlit corre desde otra ubicación
-    try:
-        from proyecto.connection import create_connection
-    except:
-        st.error("No se encuentra el archivo conexion.py en la raíz.")
-        st.stop()
+except ImportError as e:
+    st.error(f"Error al importar la conexión: {e}")
+    st.stop()
 
-# Importamos distrito. Como está en la misma carpeta 'modulos', 
-# y ya agregamos 'current_dir' al path, esto debería funcionar directo:
-import distrito
-# Si te da error en la linea de arriba cámbiala por: from modulos import distrito
+# Importamos el módulo vecino
+try:
+    import distrito 
+except ImportError:
+    from modulos import distrito
+
+# ... (El resto de tu código sigue igual) ...
 
 # ... A PARTIR DE AQUÍ SIGUE TU CÓDIGO NORMAL (def registrar_nuevo_grupo...) ... 
 
