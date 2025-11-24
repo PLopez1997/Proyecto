@@ -6,21 +6,25 @@ def miembro_page():
     st.title("👋 Bienvenid@ a tu Espacio Personal")
     st.markdown("---")
     
-    # 1. RECUPERAR IDENTIDAD DEL MIEMBRO
-    # Intentamos obtener el ID del miembro basado en la sesión.
-    # Si tu login no guarda 'Id_miembro', necesitamos buscarlo por el nombre de usuario.
+    # 1. RECUPERAR IDENTIDAD DEL MIEMBRO (NUEVA LÓGICA)
+    # Usamos el usuario de la sesión para buscar su ID vinculado en la tabla Login
     usuario_nombre = st.session_state.get('Usuario')
+    
+    if not usuario_nombre:
+        st.error("No se detectó un usuario en sesión.")
+        return
+
     id_miembro = obtener_id_miembro_por_usuario(usuario_nombre)
     
     if not id_miembro:
-        st.error(f"No se pudo vincular tu usuario ({usuario_nombre}) con un perfil de Miembro.")
-        st.info("Contacta a la directiva para verificar tu registro.")
+        st.error(f"El usuario '{usuario_nombre}' no tiene un perfil de Miembro vinculado.")
+        st.info("Solicita a un Administrador que edite tu usuario y seleccione tu nombre en el campo de 'Vincular a Miembro'.")
         return
 
     # 2. DASHBOARD DE RESUMEN
+    # Si llegamos aquí, ya tenemos el ID correcto (ej: 45)
     col1, col2, col3 = st.columns(3)
     
-    # Obtenemos totales
     total_ahorro = obtener_total_ahorro(id_miembro)
     deuda_prestamo = obtener_deuda_actual(id_miembro)
     multas_pendientes = obtener_multas_pendientes(id_miembro)
@@ -39,10 +43,7 @@ def miembro_page():
         df_ahorros = obtener_historial_ahorros(id_miembro)
         
         if not df_ahorros.empty:
-            # Gráfico de línea temporal
             st.line_chart(df_ahorros, x="Fecha", y="Monto")
-            
-            # Tabla detallada
             with st.expander("Ver detalles de depósitos"):
                 st.dataframe(df_ahorros, use_container_width=True)
         else:
@@ -55,7 +56,6 @@ def miembro_page():
         
         if not df_prestamos.empty:
             for index, row in df_prestamos.iterrows():
-                # Tarjeta visual por cada préstamo
                 with st.container(border=True):
                     c1, c2, c3, c4 = st.columns(4)
                     c1.write(f"**Fecha:** {row['Fecha_inicio']}")
@@ -66,11 +66,13 @@ def miembro_page():
                     if estado == 'Activo':
                         c4.success(f"🟢 {estado}")
                     else:
-                        c4.secondary(f"⚪ {estado}")
+                        c4.info(f"⚪ {estado}")
                     
-                    # Barra de progreso de pago (Estimada)
+                    # Barra de progreso
                     pagado = obtener_pagado_por_prestamo(row['Id_prestamo'])
-                    total_deuda = row['Monto'] + (row['Monto'] * row['Interes']/100 * row['Plazo'])
+                    # Cálculo estimado de deuda total (Capital + Interés simple)
+                    interes_total = row['Monto'] * (row['Interes']/100) * row['Plazo']
+                    total_deuda = row['Monto'] + interes_total
                     
                     progreso = min(pagado / total_deuda, 1.0) if total_deuda > 0 else 0
                     st.progress(progreso, text=f"Pagado: ${pagado:,.2f} / Total estimado: ${total_deuda:,.2f}")
@@ -83,37 +85,32 @@ def miembro_page():
         df_multas = obtener_historial_multas(id_miembro)
         
         if not df_multas.empty:
-            # Colorear fila según estado
-            def color_estado(val):
-                color = 'red' if val == 'Pendiente' else 'green'
-                return f'color: {color}'
-
-            st.dataframe(df_multas.style.map(color_estado, subset=['Estado']), use_container_width=True)
+            st.dataframe(df_multas, use_container_width=True)
         else:
             st.success("¡Felicidades! Tienes un historial limpio sin multas.")
 
 # ==========================================
-# FUNCIONES SQL DE LECTURA (Solo lectura)
+# FUNCIONES SQL (LECTURA)
 # ==========================================
 
 def obtener_id_miembro_por_usuario(usuario_nombre):
     """
-    Busca el Id_miembro en la tabla Miembro usando el nombre
-    Suposición: El 'Nombre' en la tabla Miembro coincide con el 'Usuario' del login
-    O hay una relación. Ajusta esto según tu realidad.
+    Busca el Id_miembro directamente en la tabla Login
+    gracias a la vinculación que hicimos en el Admin.
     """
     conn = obtener_conexion()
     id_m = None
     if conn:
         try:
             cursor = conn.cursor()
-            # INTENTO 1: Buscar por coincidencia de nombre (Ajustar si tienes lógica distinta)
-            # Lo ideal es que la tabla Login tenga Id_miembro. Si no, usamos el nombre.
-            query = "SELECT Id_miembro FROM Miembro WHERE Nombre LIKE %s LIMIT 1"
-            cursor.execute(query, (f"%{usuario_nombre}%",))
+            # CONSULTA CLAVE:
+            query = "SELECT Id_miembro FROM Login WHERE Usuario = %s"
+            cursor.execute(query, (usuario_nombre,))
             res = cursor.fetchone()
-            if res:
+            if res and res[0]:
                 id_m = res[0]
+        except Exception as e:
+            st.error(f"Error recuperando perfil: {e}")
         finally:
             conn.close()
     return id_m
@@ -133,18 +130,17 @@ def obtener_total_ahorro(id_miembro):
     return total
 
 def obtener_deuda_actual(id_miembro):
-    # Calcula deuda capital simple de préstamos activos
     conn = obtener_conexion()
     deuda = 0.0
     if conn:
         try:
             cursor = conn.cursor()
-            # Suma de montos prestados activos
+            # 1. Suma de lo prestado (Capital) en préstamos activos
             cursor.execute("SELECT SUM(Monto) FROM Prestamo WHERE Id_miembro = %s AND Estado = 'Activo'", (id_miembro,))
             res = cursor.fetchone()
             prestado = res[0] if res and res[0] else 0.0
             
-            # Restar lo pagado a capital en esos préstamos
+            # 2. Suma de lo pagado (Capital) en esos préstamos
             query_pagos = """
                 SELECT SUM(pg.Monto_capital) 
                 FROM Pago pg
@@ -192,7 +188,7 @@ def obtener_historial_prestamos(id_miembro):
     df = pd.DataFrame()
     if conn:
         try:
-            # Id_cosa: Id_prestamo, Interes, Fecha_inicio
+            # Formato Id_cosa: Id_prestamo, Interes, Fecha_inicio
             query = "SELECT Id_prestamo, Monto, Interes, Plazo, Fecha_inicio, Estado FROM Prestamo WHERE Id_miembro = %s ORDER BY Fecha_inicio DESC"
             df = pd.read_sql(query, conn, params=(id_miembro,))
         finally:
@@ -205,7 +201,7 @@ def obtener_pagado_por_prestamo(id_prestamo):
     if conn:
         try:
             cursor = conn.cursor()
-            # Sumamos Capital + Interes pagado
+            # Sumamos todo lo pagado (Capital + Interés)
             cursor.execute("SELECT SUM(Monto_capital + Monto_interes) FROM Pago WHERE Id_prestamo = %s", (id_prestamo,))
             res = cursor.fetchone()
             if res and res[0]:
