@@ -20,13 +20,13 @@ if current_dir not in sys.path:
 
 # AHORA SÍ hacemos los imports de tus archivos
 try:
-    from connection import create_connection
+    from conexion import create_connection
 except ImportError:
     # Intento alternativo por si Streamlit corre desde otra ubicación
     try:
         from proyecto.connection import create_connection
     except:
-        st.error("No se encuentra el archivo connection.py en la raíz.")
+        st.error("No se encuentra el archivo conexion.py en la raíz.")
         st.stop()
 
 # Importamos distrito. Como está en la misma carpeta 'modulos', 
