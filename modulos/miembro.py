@@ -6,12 +6,11 @@ def miembro_page():
     st.title("👋 Bienvenid@ a tu Espacio Personal")
     st.markdown("---")
     
-    # 1. RECUPERAR IDENTIDAD DEL MIEMBRO (NUEVA LÓGICA)
-    # Usamos el usuario de la sesión para buscar su ID vinculado en la tabla Login
+    # 1. RECUPERAR IDENTIDAD DEL MIEMBRO
     usuario_nombre = st.session_state.get('Usuario')
     
     if not usuario_nombre:
-        st.error("No se detectó un usuario en sesión.")
+        st.error("⚠️ No se detectó un usuario en sesión. Por favor inicie sesión nuevamente.")
         return
 
     id_miembro = obtener_id_miembro_por_usuario(usuario_nombre)
@@ -22,7 +21,6 @@ def miembro_page():
         return
 
     # 2. DASHBOARD DE RESUMEN
-    # Si llegamos aquí, ya tenemos el ID correcto (ej: 45)
     col1, col2, col3 = st.columns(3)
     
     total_ahorro = obtener_total_ahorro(id_miembro)
@@ -70,8 +68,12 @@ def miembro_page():
                     
                     # Barra de progreso
                     pagado = obtener_pagado_por_prestamo(row['Id_prestamo'])
+                    
                     # Cálculo estimado de deuda total (Capital + Interés simple)
-                    interes_total = row['Monto'] * (row['Interes']/100) * row['Plazo']
+                    try:
+                        interes_total = row['Monto'] * (row['Interes']/100) * row['Plazo']
+                    except:
+                        interes_total = 0
                     total_deuda = row['Monto'] + interes_total
                     
                     progreso = min(pagado / total_deuda, 1.0) if total_deuda > 0 else 0
@@ -94,23 +96,18 @@ def miembro_page():
 # ==========================================
 
 def obtener_id_miembro_por_usuario(usuario_nombre):
-    """
-    Busca el Id_miembro directamente en la tabla Login
-    gracias a la vinculación que hicimos en el Admin.
-    """
     conn = obtener_conexion()
     id_m = None
     if conn:
         try:
             cursor = conn.cursor()
-            # CONSULTA CLAVE:
             query = "SELECT Id_miembro FROM Login WHERE Usuario = %s"
             cursor.execute(query, (usuario_nombre,))
             res = cursor.fetchone()
             if res and res[0]:
                 id_m = res[0]
         except Exception as e:
-            st.error(f"Error recuperando perfil: {e}")
+            st.error(f"Error recuperando ID: {e}")
         finally:
             conn.close()
     return id_m
@@ -125,6 +122,8 @@ def obtener_total_ahorro(id_miembro):
             res = cursor.fetchone()
             if res and res[0]:
                 total = res[0]
+        except Exception as e:
+            st.error(f"Error SQL Ahorro: {e}")
         finally:
             conn.close()
     return total
@@ -135,15 +134,16 @@ def obtener_deuda_actual(id_miembro):
     if conn:
         try:
             cursor = conn.cursor()
-            # 1. Suma de lo prestado (Capital) en préstamos activos
+            # 1. Suma de lo prestado
             cursor.execute("SELECT SUM(Monto) FROM Prestamo WHERE Id_miembro = %s AND Estado = 'Activo'", (id_miembro,))
             res = cursor.fetchone()
             prestado = res[0] if res and res[0] else 0.0
             
-            # 2. Suma de lo pagado (Capital) en esos préstamos
+            # 2. Suma de lo pagado (Capital)
+            # CAMBIO: Usamos la tabla 'Pagos' (plural)
             query_pagos = """
                 SELECT SUM(pg.Monto_capital) 
-                FROM Pago pg
+                FROM Pagos pg
                 JOIN Prestamo p ON pg.Id_prestamo = p.Id_prestamo
                 WHERE p.Id_miembro = %s AND p.Estado = 'Activo'
             """
@@ -152,6 +152,8 @@ def obtener_deuda_actual(id_miembro):
             pagado = res_pagos[0] if res_pagos and res_pagos[0] else 0.0
             
             deuda = prestado - pagado
+        except Exception as e:
+            st.error(f"Error SQL Deuda (Verifica tabla Pagos): {e}")
         finally:
             conn.close()
     return max(deuda, 0.0)
@@ -166,6 +168,8 @@ def obtener_multas_pendientes(id_miembro):
             res = cursor.fetchone()
             if res and res[0]:
                 total = res[0]
+        except Exception as e:
+            st.error(f"Error SQL Multas: {e}")
         finally:
             conn.close()
     return total
@@ -179,6 +183,8 @@ def obtener_historial_ahorros(id_miembro):
             df = pd.read_sql(query, conn, params=(id_miembro,))
             if not df.empty and 'Fecha' in df.columns:
                 df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+        except Exception as e:
+            st.error(f"Error Historial Ahorro: {e}")
         finally:
             conn.close()
     return df
@@ -191,6 +197,8 @@ def obtener_historial_prestamos(id_miembro):
             # Formato Id_cosa: Id_prestamo, Interes, Fecha_inicio
             query = "SELECT Id_prestamo, Monto, Interes, Plazo, Fecha_inicio, Estado FROM Prestamo WHERE Id_miembro = %s ORDER BY Fecha_inicio DESC"
             df = pd.read_sql(query, conn, params=(id_miembro,))
+        except Exception as e:
+            st.error(f"Error Historial Préstamos: {e}")
         finally:
             conn.close()
     return df
@@ -201,11 +209,13 @@ def obtener_pagado_por_prestamo(id_prestamo):
     if conn:
         try:
             cursor = conn.cursor()
-            # Sumamos todo lo pagado (Capital + Interés)
-            cursor.execute("SELECT SUM(Monto_capital + Monto_interes) FROM Pago WHERE Id_prestamo = %s", (id_prestamo,))
+            # CAMBIO: Usamos la tabla 'Pagos' (plural)
+            cursor.execute("SELECT SUM(Monto_capital + Monto_interes) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
             res = cursor.fetchone()
             if res and res[0]:
                 total = res[0]
+        except Exception as e:
+            st.error(f"Error Pagos: {e}")
         finally:
             conn.close()
     return total
@@ -219,6 +229,8 @@ def obtener_historial_multas(id_miembro):
             df = pd.read_sql(query, conn, params=(id_miembro,))
             if not df.empty and 'Fecha' in df.columns:
                 df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+        except Exception as e:
+            st.error(f"Error Historial Multas: {e}")
         finally:
             conn.close()
     return df
