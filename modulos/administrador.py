@@ -73,66 +73,88 @@ def fetch_referencia_data():
         else:
             ref["ciclos"] = pd.DataFrame({"Id_ciclo":[],"Nombre":[]})
 
-       # Grupos
-if grupo_table:
+ try:
 
-    cols = table_columns(conn, grupo_table)
+    # ================= GRUPOS ====================
+    if grupo_table:
 
-    id_col = pick_column(cols, ["Id_grupo","id_grupo","Id_cliente","Id","Id_cliente"]) 
-    label_col = pick_column(cols, ["Nombre","nombre","Descripcion","descripcion","Grupo"]) 
+        cols = table_columns(conn, grupo_table)
 
-    # --- NUEVO: Asignación de distrito al crear un grupo ---
-    st.subheader("➕ Crear nuevo grupo")
+        id_col = pick_column(cols, ["Id_grupo","id_grupo","Id_cliente","Id","Id_cliente"]) 
+        label_col = pick_column(cols, ["Nombre","nombre","Descripcion","descripcion","Grupo"]) 
 
-    nuevo_nombre = st.text_input("Nombre del Grupo:")
-    nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
+        # --- NUEVO: Asignación de distrito al crear un grupo ---
+        st.subheader("➕ Crear nuevo grupo")
 
-    if st.button("Guardar Grupo"):
+        nuevo_nombre = st.text_input("Nombre del Grupo:")
+        nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
 
-        if nuevo_nombre.strip() == "":
-            st.error("Debe ingresar un nombre para el grupo.")
+        if st.button("Guardar Grupo"):
+
+            if nuevo_nombre.strip() == "":
+                st.error("Debe ingresar un nombre para el grupo.")
+            else:
+                try:
+                    cur = conn.cursor()
+                    insert_query = f"""
+                        INSERT INTO `{grupo_table}` (Nombre, Id_distrito)
+                        VALUES (%s, %s)
+                    """
+                    cur.execute(insert_query, (nuevo_nombre, nuevo_distrito))
+                    conn.commit()
+                    st.success("Grupo creado exitosamente.")
+                except Exception as e:
+                    st.error(f"Error al guardar el grupo: {e}")
+
+        # ---- LECTURA NORMAL DE GRUPOS ----
+        if id_col and label_col:
+            ref["grupos"] = pd.read_sql(
+                f"SELECT `{id_col}` AS Id_grupo, `{label_col}` AS Nombre, Id_distrito FROM `{grupo_table}`",
+                conn
+            )
+
+        elif id_col:
+            ref["grupos"] = pd.read_sql(
+                f"SELECT `{id_col}` AS Id_grupo, Id_distrito FROM `{grupo_table}`",
+                conn
+            )
+            ref["grupos"]["Nombre"] = ref["grupos"]["Id_grupo"].astype(str)
+
         else:
-            try:
-                cur = conn.cursor()
-                insert_query = f"""
-                    INSERT INTO `{grupo_table}` (Nombre, Id_distrito)
-                    VALUES (%s, %s)
-                """
-                cur.execute(insert_query, (nuevo_nombre, nuevo_distrito))
-                conn.commit()
-                st.success("Grupo creado exitosamente.")
-            except Exception as e:
-                st.error(f"Error al guardar el grupo: {e}")
-
-    # ---- LECTURA NORMAL DE GRUPOS (No se altera) ----
-    if id_col and label_col:
-        ref["grupos"] = pd.read_sql(
-            f"SELECT `{id_col}` AS Id_grupo, `{label_col}` AS Nombre, Id_distrito FROM `{grupo_table}`",
-            conn
-        )
-
-    elif id_col:
-        ref["grupos"] = pd.read_sql(
-            f"SELECT `{id_col}` AS Id_grupo, Id_distrito FROM `{grupo_table}`",
-            conn
-        )
-        ref["grupos"]["Nombre"] = ref["grupos"]["Id_grupo"].astype(str)
+            ref["grupos"] = pd.DataFrame({
+                "Id_grupo": [],
+                "Nombre": [],
+                "Id_distrito": []
+            })
 
     else:
-        ref["grupos"] = pd.DataFrame({"Id_grupo": [], "Nombre": [], "Id_distrito": []})
+        ref["grupos"] = pd.DataFrame({
+            "Id_grupo": [],
+            "Nombre": [],
+            "Id_distrito": []
+        })
 
-else:
-    ref["grupos"] = pd.DataFrame({"Id_grupo": [], "Nombre": [], "Id_distrito": []})
+    # --------------------
+    # RETURN NORMAL
+    # --------------------
+    return ref
 
-return ref
 
+# -------- EXCEPTION --------
+except Exception as e:
+    st.warning(f"No se pudieron cargar datos de referencia. Error: {e}")
+    return {
+        "distritos": pd.DataFrame({"Id_distrito": [], "Nombre": []}),
+        "ciclos": pd.DataFrame({"Id_ciclo": [], "Nombre": []}),
+        "grupos": pd.DataFrame({"Id_grupo": [], "Nombre": []})
+    }
 
-    except Exception as e:
-        st.warning(f"No se pudieron cargar datos de referencia. Error: {e}")
-        return {"distritos":pd.DataFrame({"Id_distrito":[],"Nombre":[]}),"ciclos":pd.DataFrame({"Id_ciclo":[],"Nombre":[]}),"grupos":pd.DataFrame({"Id_grupo":[],"Nombre":[]})}
-    finally:
-        conn.close()
+# -------- FINALLY --------
+finally:
+    conn.close()
+  
 
+  
 # -----------------------
 # CREAR USUARIO (textbox para grupo y textbox para promotora->distrito)
 # -----------------------
