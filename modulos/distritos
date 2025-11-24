@@ -7,7 +7,7 @@
 import streamlit as st
 import pandas as pd
 # Asegúrate de que esta importación sea correcta según tu estructura de archivos
-from connection import create_connection
+from modulos.config.conexion import obtener_conexion
 
 # ==============================================================================
 # SECCIÓN 1: FUNCIONES AUXILIARES DE CONSULTA SQL (BACKEND)
@@ -16,7 +16,7 @@ from connection import create_connection
 
 def obtener_info_distrito(id_distrito):
     """Obtiene los datos generales del distrito."""
-    conn = create_connection()
+    conn = obtener_conexion
     data = None
     if conn:
         try:
@@ -33,7 +33,7 @@ def obtener_info_distrito(id_distrito):
 
 def obtener_grupos_del_distrito_df(id_distrito):
     """Devuelve un DataFrame con los grupos de UN distrito específico."""
-    conn = create_connection()
+    conn = obtener_conexion
     df = pd.DataFrame()
     if conn:
         try:
@@ -51,7 +51,7 @@ def obtener_grupos_del_distrito_df(id_distrito):
 
 def obtener_miembros_del_grupo_df(id_grupo):
     """Devuelve un DataFrame con los miembros de UN grupo específico."""
-    conn = create_connection()
+    conn = obtener_conexion
     df = pd.DataFrame()
     if conn:
         try:
