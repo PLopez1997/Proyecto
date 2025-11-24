@@ -3,6 +3,14 @@ import pandas as pd
 import hashlib
 from modulos.config.conexion import obtener_conexion
 
+def administrador_page():
+    st.title("Panel del Administrador")
+
+    st.write("Aquí va todo tu contenido del panel de administración.")
+
+    # Si tenías tablas, selects, botones o lógica del admin,
+    # TODO VA AQUÍ adentro.
+
 
 # ======================================================
 #                  HELPERS
@@ -343,11 +351,4 @@ def listar_usuarios():
     finally:
         conn.close()
 
-def administrador_page():
-    st.title("Panel del Administrador")
-
-    st.write("Aquí va todo tu contenido del panel de administración.")
-
-    # Si tenías tablas, selects, botones o lógica del admin,
-    # TODO VA AQUÍ adentro.
 
