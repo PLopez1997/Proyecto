@@ -25,7 +25,7 @@ if st.session_state.get("logged_in") == True:
     # Nota: No cambiamos nada DE los módulos, solo CUÁNDO se llaman.
 
     if Rol == "promotora":
-        from modulos.promotora import promotora_page
+        from modulos.promotora import app as promotora_page
         promotora_page()
 
     elif Rol == "junta directiva": 
