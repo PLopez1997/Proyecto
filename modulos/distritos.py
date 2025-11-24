@@ -54,7 +54,7 @@ def obtener_grupos_del_distrito_df(id_distrito):
             # Usamos ALIAS (AS) para que Python reciba los nombres estandarizados
             # Ajusta 'Nombre', 'Ubicacion' si en tu BD se llaman diferente
             query = """
-                SELECT Id_grupo AS id_grupo, Nombre AS nombre_grupo, Ubicacion AS ubicacion_grupo, Fecha_inicio AS fecha_creacion 
+                SELECT Id_grupo AS id_grupo, Nombre AS nombre_grupo, Fecha_inicio AS fecha_creacion 
                 FROM Grupo 
                 WHERE Id_distrito = %s
             """
@@ -109,7 +109,7 @@ def _ejecutar_consulta_df(query, parametro_id):
 
 def obtener_prestamos_miembro(id_miembro):
     sql = """SELECT Id_prestamo, Monto AS monto_prestamo, Tasa_interes, Plazo AS plazo_meses, 
-             Fecha_inicio, Fecha_vencimiento, Estado AS estado_prestamo 
+             Fecha_inicio, Estado AS estado_prestamo 
              FROM Prestamo WHERE Id_miembro = %s"""
     return _ejecutar_consulta_df(sql, id_miembro)
 
