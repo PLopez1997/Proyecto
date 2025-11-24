@@ -33,8 +33,7 @@ def fetch_referencia_data():
         return {
             "distritos": pd.DataFrame({"Id_distrito":[],"Nombre":[]}),
             "ciclos": pd.DataFrame({"Id_ciclo":[],"Nombre":[]}),
-            "grupos": pd.DataFrame({"Id_grupo":[],"Nombre":[]})
-        }
+            "grupos": pd.DataFrame({"Id_grupo":[],"Nombre":[]}¨)}
 
     try:
         # Detectar nombres reales de tablas
