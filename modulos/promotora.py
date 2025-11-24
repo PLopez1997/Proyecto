@@ -1,20 +1,40 @@
 import streamlit as st
 import pandas as pd
+from datetime import date
 import sys
 import os
 
-# --- AGREGA ESTAS LÍNEAS AL PRINCIPIO ---
-# Esto agrega la carpeta anterior (la raíz del proyecto) a la ruta de búsqueda
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-# ----------------------------------------
+# --- INICIO DEL BLOQUE DE ARREGLO DE RUTAS ---
+# 1. Obtenemos la ruta absoluta de la carpeta donde está este archivo (modulos)
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Ahora sí funcionará esta importación
-from connection import create_connection
-# Si distrito.py también está dentro de 'modulos', impórtalo así:
-import modulos.distrito as distrito 
-# (O si distrito.py está en la raíz, usa 'import distrito')
+# 2. Obtenemos la ruta de la carpeta PADRE (la raíz de tu proyecto)
+parent_dir = os.path.dirname(current_dir)
 
-# ... resto de tu código ... 
+# 3. Agregamos ambas rutas al sistema de búsqueda de Python
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+# --- FIN DEL BLOQUE ---
+
+# AHORA SÍ hacemos los imports de tus archivos
+try:
+    from connection import create_connection
+except ImportError:
+    # Intento alternativo por si Streamlit corre desde otra ubicación
+    try:
+        from proyecto.connection import create_connection
+    except:
+        st.error("No se encuentra el archivo connection.py en la raíz.")
+        st.stop()
+
+# Importamos distrito. Como está en la misma carpeta 'modulos', 
+# y ya agregamos 'current_dir' al path, esto debería funcionar directo:
+import distrito
+# Si te da error en la linea de arriba cámbiala por: from modulos import distrito
+
+# ... A PARTIR DE AQUÍ SIGUE TU CÓDIGO NORMAL (def registrar_nuevo_grupo...) ... 
 
 # ------------------------------------------------------------------------------
 # FUNCIONES DE BASE DE DATOS ESPECÍFICAS PARA ESTE PANEL
