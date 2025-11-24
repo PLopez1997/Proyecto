@@ -14,7 +14,7 @@ if parent_dir not in sys.path:
 # --- IMPORTACIÓN CORRECTA ---
 # Como tu archivo se llama 'conexion.py', debemos importar 'conexion'
 try:
-    from conexion import create_connection
+    from config.conexion import create_connection
 except ImportError as e:
     st.error(f"Error al importar la conexión: {e}")
     st.stop()
