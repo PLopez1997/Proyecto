@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 
-# --- GESTIÓN DE IMPORTACIONES DE CONEXIÓN ---
+# --- IMPORTAR CONEXIÓN ---
 try:
     from modulos.config.conexion import obtener_conexion
 except ImportError:
@@ -11,28 +11,31 @@ except ImportError:
         try:
             from conexion import obtener_conexion
         except ImportError:
-            st.error("❌ Error crítico: No se encuentra el archivo de conexión.")
+            st.error("❌ No se encontró el archivo de conexión.")
             st.stop()
 
-
 # ==============================================================================
-# FUNCIÓN: CONSULTA A BASE DE DATOS
+# VERIFICAR USUARIO DESDE TABLA PROMOTORA
 # ==============================================================================
-def verificar_usuario(Usuario, Contraseña, Rol):
+def verificar_usuario_promotora(usuario, contrasena):
     con = obtener_conexion()
     if not con:
-        st.error("⚠️ No se pudo conectar a la base de datos.")
         return None
 
     try:
         cursor = con.cursor(dictionary=True)
 
+        # AHORA BUSCA EN TABLA PROMOTORA
         query = """
-            SELECT Usuario, Rol, Id_grupo, Id_distrito 
-            FROM Login 
-            WHERE Usuario = %s AND Contraseña = %s AND Rol = %s
+            SELECT 
+                p.Usuario,
+                p.Contraseña,
+                p.Id_distrito
+            FROM Promotora p
+            WHERE p.Usuario = %s AND p.Contraseña = %s
         """
-        cursor.execute(query, (Usuario, Contraseña, Rol))
+
+        cursor.execute(query, (usuario, contrasena))
         result = cursor.fetchone()
         return result
 
@@ -40,84 +43,79 @@ def verificar_usuario(Usuario, Contraseña, Rol):
         st.error(f"Error en la consulta: {e}")
         return None
     finally:
-        if con.is_connected():
-            con.close()
-
+        con.close()
 
 # ==============================================================================
-# FUNCIÓN: PÁGINA DE LOGIN
+# LOGIN PAGE
 # ==============================================================================
 def login_page():
     st.title("Inicio de sesión - GAPC")
     st.markdown("---")
 
     with st.form("login_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            Usuario = st.text_input("👤 Usuario")
-        with col2:
-            Contraseña = st.text_input("🔑 Contraseña", type="password")
+        usuario = st.text_input("👤 Usuario")
+        contrasena = st.text_input("🔑 Contraseña", type="password")
 
-        Roles = ["administrador", "promotora", "miembro", "junta directiva"]
-        Rol = st.selectbox("Seleccione su Rol", Roles)
+        rol = st.selectbox(
+            "Seleccione su Rol",
+            ["administrador", "promotora", "miembro", "junta directiva"]
+        )
 
-        # -----------------------------------------
-        # SELECCIÓN DE DISTRITO PARA PROMOTORA
-        # -----------------------------------------
         distrito_seleccionado = None
-        if Rol == "promotora":
+        
+        if rol == "promotora":
+            st.info("📍 Verificación de Distrito")
             distrito_seleccionado = st.selectbox(
-                "Seleccione su distrito (1, 2 o 3):",
-                [1, 2, 3],
-                help="Debe coincidir con el distrito asignado en su usuario."
+                "Seleccione el distrito:",
+                [1, 2, 3]
             )
 
-        submitted = st.form_submit_button("Iniciar sesión", use_container_width=True)
+        submitted = st.form_submit_button("Iniciar sesión")
 
     if submitted:
-        if not Usuario or not Contraseña:
-            st.warning("⚠️ Por favor ingrese usuario y contraseña.")
+
+        if rol != "promotora":
+            st.error("⚠️ En este código solo estamos corrigiendo la parte de promotora.")
             return
 
-        # Consultamos usuario
-        user_data = verificar_usuario(Usuario, Contraseña, Rol)
+        # -----------------------------
+        # 1. VERIFICAR EN TABLA PROMOTORA
+        # -----------------------------
+        user_data = verificar_usuario_promotora(usuario, contrasena)
 
-        if user_data:
+        if not user_data:
+            st.error("❌ Usuario o contraseña incorrectos.")
+            return
 
-            # ============================================================
-            # VALIDACIÓN DE DISTRITO EXCLUSIVA PARA PROMOTORA
-            # ============================================================
-            if Rol == "promotora":
+        # -----------------------------
+        # 2. VALIDAR DISTRITO
+        # -----------------------------
+        distrito_db = user_data["Id_distrito"]
 
-                db_distrito_id = user_data.get("Id_distrito")
+        if distrito_db is None:
+            st.error("⛔ Error: Esta promotora no tiene distrito asignado en la base de datos.")
+            return
 
-                # Caso 1: No tiene distrito asignado
-                if db_distrito_id is None:
-                    st.error("⛔ Error: Su usuario no tiene un distrito asignado en la base de datos.")
-                    return
+        if int(distrito_db) != int(distrito_seleccionado):
+            st.error(
+                f"🚫 Acceso Denegado:\n"
+                f"El usuario '{usuario}' está asignado al distrito {distrito_db}, "
+                f"pero intentó acceder al distrito {distrito_seleccionado}."
+            )
+            return
 
-                # Caso 2: El distrito seleccionado NO coincide con el de BD
-                if int(db_distrito_id) != int(distrito_seleccionado):
-                    st.error(
-                        f"🚫 Acceso Denegado:\n\n"
-                        f"Usted seleccionó el Distrito {distrito_seleccionado}, "
-                        f"pero su usuario solo tiene acceso al Distrito {db_distrito_id}."
-                    )
-                    return
+        # -----------------------------
+        # 3. LOGIN CORRECTO
+        # -----------------------------
+        st.success(f"✅ Bienvenida {usuario}. Acceso autorizado al Distrito {distrito_db}.")
 
-            # GUARDAR SESIÓN
-            st.session_state['logged_in'] = True
-            st.session_state['user_role'] = user_data['Rol']
-            st.session_state['user_name'] = user_data['Usuario']
-            st.session_state['grupo_id'] = user_data.get('Id_grupo')
-            st.session_state['id_distrito_actual'] = user_data.get('Id_distrito')
+        st.session_state["logged_in"] = True
+        st.session_state["user_role"] = rol
+        st.session_state["user_name"] = usuario
+        st.session_state["id_distrito_actual"] = distrito_db
 
-            st.success(f"✅ Bienvenido/a {user_data['Usuario']}.")
-            time.sleep(0.8)
-            st.rerun()
-
-        else:
-            st.error("❌ Usuario, contraseña o rol incorrectos.")
+        time.sleep(1)
+        st.rerun()
 
 
 if __name__ == "__main__":
