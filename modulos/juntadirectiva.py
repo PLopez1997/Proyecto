@@ -549,7 +549,7 @@ def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo):
             cursor = conn.cursor()
             
             # Registrar Pago
-            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha) VALUES (%s, %s, %s, %s)"
+            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha_pago) VALUES (%s, %s, %s, %s)"
             cursor.execute(q_p, (id_prestamo, capital, interes, fecha))
             
             # Ingreso Caja
