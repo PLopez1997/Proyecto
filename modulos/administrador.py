@@ -539,4 +539,10 @@ def administrador_page():
     elif seleccion == "Reportes Consolidados":
         show_admin_reports()
 
-
+tab1, tab2 = st.tabs(["➕ Crear Usuario", "📋 Lista de Usuarios"])
+    
+    with tab1:
+        create_user_form()
+        
+    with tab2:
+        listar_usuarios()
