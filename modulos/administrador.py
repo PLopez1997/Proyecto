@@ -239,19 +239,14 @@ def create_user_form(ref_data):
                 con.close()
 
 # -----------------------
-# CREAR CICLO (vinculado a un grupo)
-# -----------------------
+# CREAR CICLO (ya SIN vínculo a grupo)
+# ------------------------------------
 
 def create_cycle_form(ref_data):
-    st.subheader("➕ Crear Nuevo Ciclo (vinculado a un Grupo)")
-
-    grupos_df = ref_data["grupos"]
-    if grupos_df.empty:
-        st.error("No hay grupos disponibles. Crea primero un grupo en la sección correspondiente.")
-        return
+    st.subheader("➕ Crear Nuevo Ciclo")
 
     with st.form("form_nuevo_ciclo"):
-        grupo_sel = st.selectbox("Selecciona Grupo para el Ciclo", grupos_df["Nombre"].tolist())
+
         fecha_inicio = st.date_input("Fecha Inicio")
         fecha_cierre = st.date_input("Fecha Cierre")
         utilidades = st.number_input("Utilidades estimadas", min_value=0.0, value=0.0)
@@ -259,54 +254,69 @@ def create_cycle_form(ref_data):
         duracion = st.number_input("Duración (días)", min_value=1, value=30)
 
         submitted = st.form_submit_button("Crear Ciclo")
+
         if submitted:
-            id_grupo = int(grupos_df.loc[grupos_df["Nombre"]==grupo_sel, "Id_grupo"].iloc[0])
+
             con = obtener_conexion()
             if not con:
                 st.error("No hay conexión a BD")
                 return
+
             try:
-                ciclo_table = next((t for t in ["Ciclo","ciclo","Ciclos","ciclos"] if table_columns(con, t)), None)
+                # Detectar tabla ciclo en la BD
+                ciclo_table = next(
+                    (t for t in ["Ciclo", "ciclo", "Ciclos", "ciclos"] if table_columns(con, t)),
+                    None
+                )
                 if not ciclo_table:
                     st.error("No se encontró la tabla Ciclo en la BD.")
                     return
 
                 cols = table_columns(con, ciclo_table)
-                insert_cols = []
-                params = []
-                placeholders = []
 
+                insert_cols = []
+                placeholders = []
+                params = []
+
+                # Función para agregar columnas solo si existen
                 def maybe_add(colname, value):
                     if colname in cols:
                         insert_cols.append(colname)
                         placeholders.append("%s")
                         params.append(value)
 
-                maybe_add("Id_grupo", id_grupo)
+                # Campos reconocidos en la tabla Ciclo
                 maybe_add("Fecha_inicio", str(fecha_inicio))
                 maybe_add("Fecha_cierre", str(fecha_cierre))
                 maybe_add("Utilidades", utilidades)
                 maybe_add("Estado", estado)
-                # aceptar variantes con y sin tilde
-                maybe_add("Duración", duracion)
                 maybe_add("Duracion", duracion)
+                maybe_add("Duración", duracion)  # si existe con tilde
 
                 if not insert_cols:
                     st.error("La tabla Ciclo no tiene columnas reconocibles para insertar.")
                     return
 
-                sql = f"INSERT INTO `{ciclo_table}` ({', '.join('`'+c+'`' for c in insert_cols)}) VALUES ({', '.join(placeholders)})"
+                sql = (
+                    f"INSERT INTO `{ciclo_table}` "
+                    f"({', '.join('`' + c + '`' for c in insert_cols)}) "
+                    f"VALUES ({', '.join(placeholders)})"
+                )
+
                 cur = con.cursor()
                 cur.execute(sql, tuple(params))
                 con.commit()
                 st.success("Ciclo creado correctamente.")
                 cur.close()
                 st.rerun()
+
             except Exception as e:
                 con.rollback()
                 st.error(f"Error al crear ciclo: {e}")
+
             finally:
                 con.close()
+
 
 # -----------------------
 # GESTIÓN DE GRUPOS (creación vinculada a tabla real)
