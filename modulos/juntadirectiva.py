@@ -19,7 +19,7 @@ def junta_directiva_page():
         gestionar_caja_prestamos()
 
     elif choice == "Reportes":
-        st.info("Módulo de Reportes en construcción.")
+        show_reports()
 
 # --- SUB-FUNCIONES ---
 
@@ -730,3 +730,69 @@ def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
                 st.error(f"Error al guardar asistencia: {e}")
         finally:
             conn.close()
+
+def show_reports():
+    st.header("📊 Reportes Consolidados")
+    
+    conn = obtener_conexion()
+    if not conn:
+        st.error("No hay conexión con la base de datos.")
+        return
+
+    try:
+        grupo_id = st.session_state.get('grupo_id')
+        
+        # 1. CONSULTA DIRECTA (Ya sabemos qué columnas existen)
+        # Traemos todos los movimientos de ESTE grupo ordenados por fecha
+        query = """
+            SELECT Fecha, Detalle, Tipo_transaccion, Monto 
+            FROM Caja 
+            WHERE Id_grupo = %s 
+            ORDER BY Fecha DESC
+        """
+        df = pd.read_sql(query, conn, params=(grupo_id,))
+
+        if not df.empty:
+            # --- SECCIÓN 1: TARJETAS DE INDICADORES (KPIs) ---
+            # Pandas hace el cálculo matemático rápido aquí
+            total_ingresos = df[df['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
+            total_egresos = df[df['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
+            saldo_actual = total_ingresos - total_egresos
+
+            # Mostramos los números grandes arriba
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Ingresos Históricos", f"${total_ingresos:,.2f}")
+            col2.metric("Total Egresos Históricos", f"${total_egresos:,.2f}")
+            col3.metric("💰 SALDO ACTUAL EN CAJA", f"${saldo_actual:,.2f}", delta="Disponible")
+
+            st.markdown("---")
+
+            # --- SECCIÓN 2: TABLA DETALLADA ---
+            st.subheader("📜 Libro Diario")
+            
+            # Formateamos la fecha para quitar la hora si molesta
+            if 'Fecha' in df.columns:
+                df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+            
+            # Coloreamos visualmente: Ingresos positivos, Egresos negativos (solo para gráfico/vista)
+            df['Flujo'] = df.apply(lambda x: x['Monto'] if x['Tipo_transaccion'] == 'Ingreso' else -x['Monto'], axis=1)
+            
+            # Mostramos la tabla limpia (sin la columna de cálculo 'Flujo')
+            st.dataframe(
+                df[['Fecha', 'Detalle', 'Tipo_transaccion', 'Monto']], 
+                use_container_width=True
+            )
+
+            # --- SECCIÓN 3: GRÁFICO VISUAL ---
+            st.subheader("Tendencia de Movimientos")
+            st.bar_chart(df, x="Fecha", y="Flujo", color="Tipo_transaccion")
+            
+        else:
+            st.info("📂 No hay movimientos registrados en la caja de este grupo todavía.")
+            st.write("Vaya a la sección 'Caja y Préstamos' o 'Reuniones' para registrar transacciones.")
+
+    except Exception as e:
+        st.error(f"Error cargando reportes: {e}")
+    finally:
+        conn.close()
+
