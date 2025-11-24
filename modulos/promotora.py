@@ -5,19 +5,23 @@ import sys
 import os
 
 # --- ARREGLO DE RUTAS ---
-# Esto permite que Python vea los archivos que están afuera de la carpeta 'modulos'
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# --- IMPORTACIÓN CORRECTA ---
-# Como tu archivo se llama 'conexion.py', debemos importar 'conexion'
+# --- IMPORTACIÓN CORRECTA DE LA CONEXIÓN ---
 try:
-    from config.conexion import obtener_conexion()
+    from config.conexion import obtener_conexion
 except ImportError as e:
     st.error(f"Error al importar la conexión: {e}")
     st.stop()
+
+# Importación del archivo distrito
+try:
+    import distrito
+except ImportError:
+    from modulos import distrito
 
 # Importamos el módulo vecino
 try:
@@ -35,7 +39,7 @@ except ImportError:
 
 def registrar_nuevo_grupo(nombre, ubicacion, id_distrito):
     """Inserta un nuevo grupo asociado al distrito actual."""
-    conn = create_connection()
+    conn = obtener_conexion
     if conn:
         try:
             cursor = conn.cursor()
