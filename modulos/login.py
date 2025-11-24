@@ -1,21 +1,36 @@
 import streamlit as st
-# Asegúrate de que esta ruta sea correcta según tu estructura de carpetas
+import time
+
+# --- GESTIÓN DE IMPORTACIONES DE CONEXIÓN ---
+# Esto maneja el problema de las rutas (modulos vs raiz)
 try:
     from modulos.config.conexion import obtener_conexion
 except ImportError:
-    # Intento alternativo por si cambió la ruta
-    from conexion import obtener_conexion
+    try:
+        from config.conexion import obtener_conexion
+    except ImportError:
+        # Último intento: importar desde la raíz si el archivo está ahí
+        try:
+            from conexion import obtener_conexion
+        except ImportError:
+            st.error("❌ Error crítico: No se encuentra el archivo de conexión.")
+            st.stop()
 
+# ==============================================================================
+# FUNCIÓN: CONSULTA A BASE DE DATOS
+# ==============================================================================
 def verificar_usuario(Usuario, Contraseña, Rol):
     con = obtener_conexion()
     if not con:
-        st.error("⚠ No se pudo conectar a la base de datos.")
+        st.error("⚠️ No se pudo conectar a la base de datos.")
         return None
 
     try:
         cursor = con.cursor(dictionary=True)
 
-        # Seleccionamos también el Id_distrito para validar
+        # NOTA: Aquí asumimos que la tabla 'Login' o 'Promotora' tiene la columna 'Id_distrito'.
+        # Si tienes una tabla separada 'Promotora', el query debería hacer un JOIN, 
+        # pero basándonos en tu imagen anterior, 'Login' ya tiene el 'Id_distrito'.
         query = """
             SELECT Usuario, Rol, Id_grupo, Id_distrito 
             FROM Login 
@@ -32,69 +47,84 @@ def verificar_usuario(Usuario, Contraseña, Rol):
         if con.is_connected():
             con.close()
 
+# ==============================================================================
+# FUNCIÓN: PÁGINA DE LOGIN
+# ==============================================================================
 def login_page():
     st.title("Inicio de sesión - GAPC")
+    st.markdown("---")
 
     # Contenedor para el formulario
     with st.form("login_form"):
-        Usuario = st.text_input("Usuario")
-        Contraseña = st.text_input("Contraseña", type="password")
+        col1, col2 = st.columns(2)
+        with col1:
+            Usuario = st.text_input("👤 Usuario")
+        with col2:
+            Contraseña = st.text_input("🔑 Contraseña", type="password")
         
         Roles = ["administrador", "promotora", "miembro", "junta directiva"]
         Rol = st.selectbox("Seleccione su Rol", Roles)
         
-        # --- NUEVA LÓGICA: SELECTOR DE DISTRITO ---
+        # --- LÓGICA ESPECÍFICA PARA PROMOTORA ---
         distrito_seleccionado = None
         
         if Rol == "promotora":
-            st.info("👤 Como Promotora, confirme su zona de trabajo.")
-            # Aquí el usuario selecciona el ID del distrito (ej: 1, 2, 3...)
-            distrito_seleccionado = st.number_input(
-                "Ingrese el Número de Distrito asignado", 
-                min_value=1, 
-                step=1,
-                help="Debe coincidir con el distrito registrado en su usuario."
+            st.info("📍 Verificación de Zona")
+            # El usuario pidió seleccionar entre 1, 2 o 3
+            distrito_seleccionado = st.selectbox(
+                "Seleccione el Número de Distrito asignado:",
+                options=[1, 2, 3],
+                help="Seleccione el distrito que le corresponde administrar."
             )
 
-        submitted = st.form_submit_button("Iniciar sesión")
+        submitted = st.form_submit_button("Iniciar sesión", use_container_width=True)
 
     if submitted:
         if not Usuario or not Contraseña:
-            st.warning("Por favor ingrese usuario y contraseña.")
+            st.warning("⚠️ Por favor ingrese usuario y contraseña.")
             return
 
         # 1. Verificamos credenciales en la Base de Datos
         user_data = verificar_usuario(Usuario, Contraseña, Rol)
 
         if user_data:
-            # 2. VALIDACIÓN EXTRA PARA PROMOTORA
-            # Verificamos si el distrito que escribió coincide con el de la BD
+            # -----------------------------------------------------------
+            # 2. VALIDACIÓN DE DISTRITO (Solo para Promotora)
+            # -----------------------------------------------------------
             if Rol == "promotora":
-                db_distrito = user_data.get('Id_distrito')
+                # Obtenemos el ID real que está guardado en la Base de Datos
+                db_distrito_id = user_data.get('Id_distrito')
                 
-                # Si en la BD no tiene distrito o no coincide con el seleccionado:
-                if db_distrito != distrito_seleccionado:
-                    st.error(f"⛔ Error de Seguridad: El usuario '{Usuario}' no está autorizado para acceder al Distrito {distrito_seleccionado}. Su distrito registrado es el {db_distrito}.")
-                    return # Detenemos el login aquí
+                # Caso A: El usuario en la BD no tiene distrito asignado (es NULL)
+                if db_distrito_id is None:
+                    st.error("⛔ Error de cuenta: Este usuario 'Promotora' no tiene un distrito asignado en la base de datos.")
+                    return
 
-            # --- SI PASA LAS VALIDACIONES, GUARDAMOS SESIÓN ---
+                # Caso B: El distrito que seleccionó NO coincide con el de la BD
+                if int(db_distrito_id) != distrito_seleccionado:
+                    st.error(f"🚫 Acceso Denegado: Usted intentó acceder al Distrito {distrito_seleccionado}, pero su usuario está registrado únicamente en el Distrito {db_distrito_id}.")
+                    return 
+
+            # -----------------------------------------------------------
+            # 3. ÉXITO: GUARDAR SESIÓN Y REDIRIGIR
+            # -----------------------------------------------------------
             st.session_state['logged_in'] = True
             st.session_state['user_role'] = user_data['Rol']
             st.session_state['user_name'] = user_data['Usuario']
             
-            # Guardamos los IDs clave para usar en los otros archivos
+            # Guardamos IDs importantes para el resto del sistema
             st.session_state['grupo_id'] = user_data.get('Id_grupo')
             
-            # Aquí guardamos el distrito validado (ya sea el seleccionado o el de la BD)
-            # Nota: Usamos 'id_distrito_actual' porque así lo llamamos en los archivos anteriores (distrito.py y promotora.py)
+            # Guardamos el distrito validado para que promotora.py sepa qué mostrar
             st.session_state['id_distrito_actual'] = user_data.get('Id_distrito')
             
-            st.success(f"¡Bienvenido! Accediendo al entorno de {Rol}...")
-            st.rerun()
+            st.success(f"✅ Credenciales correctas. Bienvenido/a {user_data['Usuario']}.")
+            time.sleep(1) # Pequeña pausa para que el usuario lea el mensaje
+            st.rerun()    # Recarga la página para ir al menú principal
             
         else:
-            st.error("❌ Credenciales incorrectas o el rol seleccionado no coincide con el usuario.")
+            st.error("❌ Error: Usuario, contraseña o rol incorrectos.")
 
-# Para probarlo localmente si ejecutas este archivo solo
-if _name_ == "_main_":
-    login_page()
+# Para probarlo localmente
+if __name__ == "__main__":
+    login_page()
