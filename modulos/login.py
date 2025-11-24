@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 
-# --- IMPORTAR CONEXIÓN ---
+# --- GESTIÓN DE IMPORTACIONES DE CONEXIÓN ---
 try:
     from modulos.config.conexion import obtener_conexion
 except ImportError:
@@ -11,13 +11,13 @@ except ImportError:
         try:
             from conexion import obtener_conexion
         except ImportError:
-            st.error("❌ No se encontró el archivo de conexión.")
+            st.error("❌ Error crítico: No se encuentra la conexión.")
             st.stop()
 
 # ==============================================================================
-# VERIFICAR USUARIO DESDE TABLA PROMOTORA
+# 1️⃣ VERIFICAR USUARIO NORMAL (TABLA LOGIN)
 # ==============================================================================
-def verificar_usuario_promotora(usuario, contrasena):
+def verificar_usuario_login(usuario, contrasena, rol):
     con = obtener_conexion()
     if not con:
         return None
@@ -25,28 +25,42 @@ def verificar_usuario_promotora(usuario, contrasena):
     try:
         cursor = con.cursor(dictionary=True)
 
-        # AHORA BUSCA EN TABLA PROMOTORA
         query = """
-            SELECT 
-                p.Usuario,
-                p.Contraseña,
-                p.Id_distrito
-            FROM Promotora p
-            WHERE p.Usuario = %s AND p.Contraseña = %s
+            SELECT Usuario, Contraseña, Rol, Id_grupo, Id_distrito
+            FROM Login 
+            WHERE Usuario = %s AND Contraseña = %s AND Rol = %s
         """
 
-        cursor.execute(query, (usuario, contrasena))
-        result = cursor.fetchone()
-        return result
+        cursor.execute(query, (usuario, contrasena, rol))
+        return cursor.fetchone()
 
-    except Exception as e:
-        st.error(f"Error en la consulta: {e}")
-        return None
     finally:
         con.close()
 
 # ==============================================================================
-# LOGIN PAGE
+# 2️⃣ OBTENER DISTRITO REAL DESDE TABLA PROMOTORA
+# ==============================================================================
+def obtener_distrito_promotora(usuario):
+    con = obtener_conexion()
+    if not con:
+        return None
+
+    try:
+        cursor = con.cursor(dictionary=True)
+
+        query = """
+            SELECT Id_distrito
+            FROM Promotora
+            WHERE Usuario = %s
+        """
+        cursor.execute(query, (usuario,))
+        return cursor.fetchone()
+
+    finally:
+        con.close()
+
+# ==============================================================================
+# 3️⃣ LOGIN PAGE
 # ==============================================================================
 def login_page():
     st.title("Inicio de sesión - GAPC")
@@ -56,68 +70,14 @@ def login_page():
         usuario = st.text_input("👤 Usuario")
         contrasena = st.text_input("🔑 Contraseña", type="password")
 
-        rol = st.selectbox(
-            "Seleccione su Rol",
-            ["administrador", "promotora", "miembro", "junta directiva"]
-        )
+        roles = ["administrador", "promotora", "miembro", "junta directiva"]
+        rol = st.selectbox("Seleccione su Rol", roles)
 
         distrito_seleccionado = None
-        
+
+        # SOLO SI EL ROL ES PROMOTORA SE PIDE DISTRITO
         if rol == "promotora":
-            st.info("📍 Verificación de Distrito")
             distrito_seleccionado = st.selectbox(
-                "Seleccione el distrito:",
-                [1, 2, 3]
-            )
-
-        submitted = st.form_submit_button("Iniciar sesión")
-
-    if submitted:
-
-        if rol != "promotora":
-            st.error("⚠️ En este código solo estamos corrigiendo la parte de promotora.")
-            return
-
-        # -----------------------------
-        # 1. VERIFICAR EN TABLA PROMOTORA
-        # -----------------------------
-        user_data = verificar_usuario_promotora(usuario, contrasena)
-
-        if not user_data:
-            st.error("❌ Usuario o contraseña incorrectos.")
-            return
-
-        # -----------------------------
-        # 2. VALIDAR DISTRITO
-        # -----------------------------
-        distrito_db = user_data["Id_distrito"]
-
-        if distrito_db is None:
-            st.error("⛔ Error: Esta promotora no tiene distrito asignado en la base de datos.")
-            return
-
-        if int(distrito_db) != int(distrito_seleccionado):
-            st.error(
-                f"🚫 Acceso Denegado:\n"
-                f"El usuario '{usuario}' está asignado al distrito {distrito_db}, "
-                f"pero intentó acceder al distrito {distrito_seleccionado}."
-            )
-            return
-
-        # -----------------------------
-        # 3. LOGIN CORRECTO
-        # -----------------------------
-        st.success(f"✅ Bienvenida {usuario}. Acceso autorizado al Distrito {distrito_db}.")
-
-        st.session_state["logged_in"] = True
-        st.session_state["user_role"] = rol
-        st.session_state["user_name"] = usuario
-        st.session_state["id_distrito_actual"] = distrito_db
-
-        time.sleep(1)
-        st.rerun()
-
-
-if __name__ == "__main__":
-    login_page()
+                "Seleccione el Distrito que desea acceder:",
+                [1, 2, 3]()
 
