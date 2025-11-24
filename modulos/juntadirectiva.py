@@ -529,45 +529,25 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
             cursor = conn.cursor()
             grupo_id = st.session_state.get('grupo_id')
             
-            # FORMATO Id_cosa: Id_miembro, Tasa_interes, Fecha_inicio
-            query_p = """
-                INSERT INTO Prestamo (Id_miembro, Monto, Tasa_interes, Plazo, Fecha_inicio, Estado) 
+            # CORRECCIÓN 1: Usamos 'Interes' en lugar de 'Tasa_interes'
+            query_prestamo = """
+                INSERT INTO Prestamo (Id_miembro, Monto, Interes, Plazo, Fecha_inicio, Estado) 
                 VALUES (%s, %s, %s, %s, %s, 'Activo')
             """
-            cursor.execute(query_p, (id_miembro, monto, tasa, plazo, fecha))
+            cursor.execute(query_prestamo, (id_miembro, monto, tasa, plazo, fecha))
             
-            # Tabla Caja: Id_grupo
-            query_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Egreso', %s, %s, %s)"
-            cursor.execute(query_c, (grupo_id, monto, fecha, f"Préstamo a ID {id_miembro}"))
-            
-            conn.commit()
-            st.success("✅ Préstamo creado.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error crear préstamo: {e}")
-        finally:
-            conn.close()
-
-def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo):
-    conn = obtener_conexion()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            
-            # FORMATO Id_cosa: Id_prestamo, Monto_capital, Monto_interes
-            query_p = "INSERT INTO Pago (Id_prestamo, Monto_capital, Monto_interes, Fecha) VALUES (%s, %s, %s, %s)"
-            cursor.execute(query_p, (id_prestamo, capital, interes, fecha))
-            
-            # Tabla Caja: Id_grupo
-            total = capital + interes
-            query_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, %s, %s)"
-            cursor.execute(query_c, (id_grupo, total, fecha, f"Pago Préstamo ID {id_prestamo}"))
+            # Registro en CAJA (Salida de dinero)
+            query_caja = """
+                INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
+                VALUES (%s, 'Egreso', %s, %s, %s)
+            """
+            cursor.execute(query_caja, (grupo_id, monto, fecha, f"Préstamo a miembro {id_miembro}"))
             
             conn.commit()
-            st.success("✅ Pago registrado.")
+            st.success("✅ Préstamo otorgado correctamente.")
             st.rerun()
         except Exception as e:
-            st.error(f"Error pago: {e}")
+            st.error(f"Error al crear préstamo: {e}")
         finally:
             conn.close()
 
@@ -579,9 +559,9 @@ def obtener_prestamos_activos():
             cursor = conn.cursor(dictionary=True)
             grupo_id = st.session_state.get('grupo_id')
             
-            # FORMATO Id_cosa: Id_prestamo, Tasa_interes, Fecha_inicio, Id_miembro
+            # CORRECCIÓN 2: Seleccionamos 'p.Interes'
             query = """
-                SELECT p.Id_prestamo, p.Monto, p.Tasa_interes, p.Fecha_inicio, 
+                SELECT p.Id_prestamo, p.Monto, p.Interes, p.Fecha_inicio, 
                        m.Nombre as Nombre_Miembro, p.Id_miembro, m.Id_grupo
                 FROM Prestamo p
                 JOIN Miembro m ON p.Id_miembro = m.Id_miembro
@@ -589,9 +569,42 @@ def obtener_prestamos_activos():
             """
             cursor.execute(query, (grupo_id,))
             data = cursor.fetchall()
+        except Exception as e:
+             st.error(f"Error cargando préstamos: {e}")
         finally:
             conn.close()
     return data
+
+def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            
+            # CORRECCIÓN 3: Coincide exacto con tu tabla Pago
+            # Columnas: Id_prestamo, Monto_capital, Monto_interes, Fecha
+            query_pago = """
+                INSERT INTO Pago (Id_prestamo, Monto_capital, Monto_interes, Fecha) 
+                VALUES (%s, %s, %s, %s)
+            """
+            cursor.execute(query_pago, (id_prestamo, capital, interes, fecha))
+            
+            # Registro en CAJA (Entrada de dinero)
+            total_recibido = capital + interes
+            query_caja = """
+                INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
+                VALUES (%s, 'Ingreso', %s, %s, %s)
+            """
+            detalle = f"Pago Préstamo ID {id_prestamo}"
+            cursor.execute(query_caja, (id_grupo, total_recibido, fecha, detalle))
+            
+            conn.commit()
+            st.success(f"✅ Pago de ${total_recibido} registrado.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al registrar pago: {e}")
+        finally:
+            conn.close()
 
 def aplicar_multa_bd(id_miembro, monto, motivo):
     conn = obtener_conexion()
