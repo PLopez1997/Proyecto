@@ -1,0 +1,149 @@
+import streamlit as st
+import pandas as pd
+from modulos.config.conexion import obtener_conexion
+from .prestamos import vista_prestamos
+
+
+def vista_distritos():
+    st.title("Gestión de Distritos y Grupos")
+
+    # ==========================================
+    # 1. Seleccionar número de distrito
+    # ==========================================
+    st.subheader("Seleccionar Distrito")
+
+    distrito_seleccionado = st.number_input(
+        "Ingrese el número de distrito (1, 2 o 3):",
+        min_value=1, max_value=3, step=1
+    )
+
+    # ==========================================
+    # 2. Mostrar grupos relacionados al distrito
+    # ==========================================
+    if distrito_seleccionado:
+        st.subheader(f"Grupos del Distrito {distrito_seleccionado}")
+
+        con = obtener_conexion()
+        cursor = con.cursor()
+
+        query_grupos = """
+            SELECT g.Id_grupo, g.Nombre, g.Fecha_inicio, g.Id_ciclo,
+                   g.Tasa_interes, g.Tipo_multa, g.Regla_interna
+            FROM grupos g
+            INNER JOIN distrito d ON d.Id_grupo = g.Id_grupo
+            WHERE d.Id_distrito = %s
+        """
+
+        cursor.execute(query_grupos, (distrito_seleccionado,))
+        data_grupos = cursor.fetchall()
+
+        columnas = [col[0] for col in cursor.description]
+        df = pd.DataFrame(data_grupos, columns=columnas)
+
+        st.dataframe(df, use_container_width=True)
+
+        # Guardar grupos encontrados para otras operaciones
+        lista_ids_grupo = df["Id_grupo"].tolist() if not df.empty else []
+
+        con.close()
+
+    st.divider()
+
+    # ==========================================
+    # 3. Agregar un grupo a un distrito
+    # ==========================================
+    st.subheader("Agregar un Grupo al Distrito")
+
+    nombre_nuevo_grupo = st.text_input(
+        "Nombre del nuevo grupo (Escribir con inicial mayúscula EXACTA)"
+    )
+
+    distrito_para_guardar = st.selectbox(
+        "Seleccione el Distrito al que pertenece este grupo:",
+        [1, 2, 3]
+    )
+
+    if st.button("Guardar Nuevo Grupo"):
+        if nombre_nuevo_grupo.strip() == "":
+            st.error("Debe ingresar un nombre válido para el grupo.")
+        else:
+            con = obtener_conexion()
+            cursor = con.cursor()
+
+            # 1. Insertar el grupo en la tabla grupos
+            insert_grupo = """
+                INSERT INTO grupos (Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna)
+                VALUES (%s, NULL, NULL, NULL, NULL, NULL)
+            """
+            cursor.execute(insert_grupo, (nombre_nuevo_grupo,))
+            con.commit()
+
+            # Recuperar el Id_grupo generado
+            cursor.execute("SELECT LAST_INSERT_ID()")
+            id_nuevo_grupo = cursor.fetchone()[0]
+
+            # 2. Insertar en la tabla distrito
+            insert_distrito = """
+                INSERT INTO distrito (Id_distrito, Id_grupo, Nombre)
+                VALUES (%s, %s, %s)
+            """
+
+            cursor.execute(insert_distrito, (
+                distrito_para_guardar,
+                id_nuevo_grupo,
+                nombre_nuevo_grupo
+            ))
+
+            con.commit()
+            con.close()
+
+            st.success("Grupo agregado correctamente al distrito.")
+            st.rerun()
+
+    st.divider()
+
+    # ==========================================
+    # 4. Mostrar miembros de un grupo
+    # ==========================================
+    st.subheader("Ver Miembros del Grupo")
+
+    if distrito_seleccionado and lista_ids_grupo:
+        grupo_sel = st.selectbox(
+            "Seleccione un grupo:",
+            lista_ids_grupo
+        )
+
+        if st.button("Mostrar miembros"):
+            con = obtener_conexion()
+            cursor = con.cursor()
+
+            query_miembros = """
+                SELECT Id_miembro, Id_grupo, Nombre, DUI, Direccion, Rol, Telefono
+                FROM miembro
+                WHERE Id_grupo = %s
+            """
+
+            cursor.execute(query_miembros, (grupo_sel,))
+            miembros_data = cursor.fetchall()
+
+            columnas = [c[0] for c in cursor.description]
+            df_m = pd.DataFrame(miembros_data, columns=columnas)
+
+            st.subheader("Miembros del Grupo")
+            st.dataframe(df_m, use_container_width=True)
+
+            con.close()
+
+    else:
+        st.info("Seleccione un distrito para cargar grupos.")
+
+    st.divider()
+
+    # ==========================================
+    # 5. Mostrar archivo prestamos.py
+    # ==========================================
+
+    st.subheader("Gestión de Préstamos")
+
+    if st.button("Ir a préstamos"):
+        vista_prestamos()
