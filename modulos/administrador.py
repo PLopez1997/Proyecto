@@ -101,10 +101,6 @@ def fetch_referencia_data():
 # CREAR USUARIO (textbox para grupo y textbox para promotora->distrito)
 # -----------------------
 
-import streamlit as st
-import pandas as pd
-from modulos.config.conexion import obtener_conexion
-
 def administrador_page():
     st.title("Panel de Administrador")
     st.markdown("---")
@@ -121,7 +117,7 @@ def create_user_form():
     st.subheader("Registrar Credenciales de Acceso")
     st.info("Crea un usuario y contraseña para que un miembro, directiva o promotora pueda entrar al sistema.")
 
-    # 1. CARGAMOS DATOS REALES DE LA BD (Para los selectores)
+    # 1. CARGAMOS DATOS REALES DE LA BD
     conn = obtener_conexion()
     if not conn:
         st.error("Sin conexión a BD")
@@ -132,7 +128,6 @@ def create_user_form():
 
     try:
         # Cargar Miembros con sus Grupos
-        # Usamos backticks en `DUI/Identificación` por el carácter especial
         query_miembros = """
             SELECT m.Id_miembro, m.Nombre, m.`DUI/Identificación` as DUI, m.Id_grupo, g.Nombre as NombreGrupo
             FROM Miembro m
@@ -140,11 +135,11 @@ def create_user_form():
         """
         df_miembros = pd.read_sql(query_miembros, conn)
 
-        # Cargar Distritos (para promotoras)
+        # Cargar Distritos
         try:
             df_distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
         except:
-            pass # Si no existe la tabla Distrito, no pasa nada por ahora
+            pass
 
     except Exception as e:
         st.error(f"Error cargando datos auxiliares: {e}")
@@ -159,11 +154,10 @@ def create_user_form():
         with col2:
             new_password = st.text_input("Contraseña", type="password")
         
-        # OJO: Los roles deben coincidir con lo que esperas en tu login.py
         roles_disponibles = ['miembro', 'junta directiva', 'promotora', 'administrador']
         new_rol = st.selectbox("Rol del Usuario", roles_disponibles)
 
-        # Variables para guardar los IDs seleccionados
+        # Variables para guardar los IDs
         id_miembro_final = None
         id_grupo_final = None
         id_distrito_final = None
@@ -172,42 +166,37 @@ def create_user_form():
 
         # --- LÓGICA INTELIGENTE SEGÚN ROL ---
         
-        # CASO A: SI ES MIEMBRO O DIRECTIVA -> VINCULAR A UN MIEMBRO EXISTENTE
+        # CASO A: SI ES MIEMBRO O DIRECTIVA
         if new_rol in ("junta directiva", "miembro"):
             if not df_miembros.empty:
                 st.write(f"👤 **Vincular a un Miembro existente:**")
-                st.caption("Al seleccionar a la persona, el sistema detectará automáticamente su Grupo.")
                 
-                # Diccionario: {Id_miembro: "Nombre (DUI) - Grupo"}
-                # Esto es lo que verá el usuario en la lista desplegable
                 lista_opciones = {
                     row['Id_miembro']: f"{row['Nombre']} (DUI: {row['DUI']}) - {row['NombreGrupo']}"
                     for index, row in df_miembros.iterrows()
                 }
                 
-                # El selectbox devuelve la LLAVE (Id_miembro)
                 id_seleccionado = st.selectbox(
                     "Buscar persona:", 
                     options=lista_opciones.keys(),
                     format_func=lambda x: lista_opciones[x]
                 )
                 
-                # ASIGNACIÓN AUTOMÁTICA DE DATOS
+                # ASIGNACIÓN AUTOMÁTICA
                 if id_seleccionado:
                     id_miembro_final = id_seleccionado
                     
-                    # Buscamos la fila correspondiente en el DataFrame para sacar el Grupo
-                    fila_miembro = df_miembros[df_miembros['Id_miembro'] == id_seleccionado].iloc[0]
-                    id_grupo_final = int(fila_miembro['Id_grupo'])
-                    nombre_grupo = fila_miembro['NombreGrupo']
+                    # Obtener datos del DataFrame
+                    fila = df_miembros[df_miembros['Id_miembro'] == id_seleccionado].iloc[0]
+                    id_grupo_final = int(fila['Id_grupo'])
+                    nombre_grupo = fila['NombreGrupo']
                     
-                    # Feedback visual para confirmar que funcionó
-                    st.success(f"🔗 Vinculado a: {nombre_grupo} (ID Grupo: {id_grupo_final})")
-                
+                    # Mostrar confirmación visual DENTRO del formulario
+                    st.info(f"✅ Se vinculará al **ID Miembro: {id_miembro_final}** del Grupo **{nombre_grupo}** (ID: {id_grupo_final})")
             else:
-                st.warning("⚠️ No hay miembros registrados en la base de datos. Primero registre miembros en el panel de Directiva.")
+                st.warning("⚠️ No hay miembros registrados. Registre miembros primero.")
 
-        # CASO B: SI ES PROMOTORA -> VINCULAR A DISTRITO
+        # CASO B: PROMOTORA
         elif new_rol == 'promotora':
             if not df_distritos.empty:
                 st.write("📍 **Asignar Distrito:**")
@@ -216,17 +205,21 @@ def create_user_form():
             else:
                 st.warning("No hay distritos registrados.")
 
-        # CASO C: ADMINISTRADOR
-        elif new_rol == 'administrador':
-            st.info("El administrador tiene acceso total.")
-
         # 3. BOTÓN DE GUARDADO
         st.markdown("---")
         submitted = st.form_submit_button("Crear Usuario")
 
         if submitted:
             if new_username and new_password:
-                guardar_usuario_bd(new_username, new_password, new_rol, id_miembro_final, id_grupo_final, id_distrito_final)
+                # Llamamos a la función de guardado
+                guardar_usuario_bd(
+                    new_username, 
+                    new_password, 
+                    new_rol, 
+                    id_miembro_final, 
+                    id_grupo_final, 
+                    id_distrito_final
+                )
             else:
                 st.error("Usuario y contraseña son obligatorios.")
 
@@ -242,13 +235,13 @@ def guardar_usuario_bd(usuario, password, rol, id_miembro, id_grupo, id_distrito
                 st.error("⛔ Este nombre de usuario ya existe.")
                 return
 
-            # Insertamos asegurando que Id_miembro se guarde
+            # INSERT
             query = """
                 INSERT INTO Login (Usuario, Contraseña, Rol, Id_miembro, Id_grupo, Id_distrito) 
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
             
-            # Convertimos a int nativo de Python para evitar errores de tipos de numpy
+            # Sanitización de datos
             id_m = int(id_miembro) if id_miembro is not None else None
             id_g = int(id_grupo) if id_grupo is not None else None
             id_d = int(id_distrito) if id_distrito is not None else None
@@ -257,6 +250,8 @@ def guardar_usuario_bd(usuario, password, rol, id_miembro, id_grupo, id_distrito
             conn.commit()
             
             st.success(f"✅ Usuario '{usuario}' creado exitosamente.")
+            if id_m:
+                st.caption(f"🔗 Vinculado a Miembro ID: {id_m}")
             
         except Exception as e:
             st.error(f"Error al guardar: {e}")
@@ -268,8 +263,7 @@ def listar_usuarios():
     if conn:
         try:
             st.subheader("Usuarios Registrados")
-            # Mostramos la tabla para verificar que se guardó el Id_miembro
-            query = "SELECT Id_usuario as ID, Usuario, Rol, Id_miembro, Id_grupo FROM Login"
+            query = "SELECT Id_usuario, Usuario, Rol, Id_miembro, Id_grupo FROM Login"
             df = pd.read_sql(query, conn)
             st.dataframe(df, use_container_width=True)
         finally:
