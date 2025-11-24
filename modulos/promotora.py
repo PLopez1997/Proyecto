@@ -162,7 +162,7 @@ def app():
 
     # --- OPCIÓN 2: GESTIÓN DE GRUPOS ---
     elif opcion == "📂 Gestión de Grupos (Detalles)":
-        distrito_page()
+        distritos_page()
 
     # --- OPCIÓN 3: AGREGAR GRUPO ---
     elif opcion == "➕ Agregar Nuevo Grupo":
