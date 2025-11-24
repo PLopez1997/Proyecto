@@ -11,7 +11,7 @@ except ImportError as e:
 
 # --- IMPORTACIÓN CORRECTA DEL MÓDULO DISTRITO ---
 try:
-    from modulos.distrito import app as distrito_page
+    from modulos.distritos import app as distritos_page
 except ImportError as e:
     st.error(f"Error al importar el módulo distrito: {e}")
     st.stop()
