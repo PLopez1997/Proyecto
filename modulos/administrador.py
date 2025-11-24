@@ -540,7 +540,7 @@ def administrador_page():
     st.title("Panel de Administración")
     
     # --- MENÚ LATERAL ---
-    opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Ciclos", "Reportes Consolidados"]
+    opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Ciclos", "Reportes Consolidados" "Gestión de Promotoras"]
     seleccion = st.sidebar.selectbox("Sección", opciones)
     
     st.sidebar.markdown("---")
@@ -557,3 +557,112 @@ def administrador_page():
         
     elif seleccion == "Reportes Consolidados":
         show_admin_reports()
+        
+    elif seleccion == "Gestión de Promotoras":
+         menu_gestion_promotoras()
+
+# ==========================================
+# FORMULARIO DE REGISTRO 1
+# ==========================================
+
+def menu_gestion_promotoras():
+    st.header("👩‍💼 Gestión de Promotoras")
+    
+    tab1, tab2 = st.tabs(["➕ Registrar Nueva", "📋 Directorio"])
+    
+    with tab1:
+        registrar_promotora_form()
+        
+    with tab2:
+        listar_promotoras()
+
+
+# ==========================================
+# FORMULARIO DE REGISTRO
+# ==========================================
+
+
+def registrar_promotora_form():
+    st.subheader("Alta de Nueva Promotora")
+    
+    conn = obtener_conexion()
+    if not conn: 
+        st.error("No hay conexión a la base de datos.")
+        return
+    
+    # Cargar distritos para el selector
+    df_distritos = pd.DataFrame()
+    try:
+        df_distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
+    except:
+        pass # Si la tabla no existe, se manejará abajo
+    finally:
+        conn.close()
+    
+    with st.form("form_promotora"):
+        c1, c2 = st.columns(2)
+        with c1:
+            nombre = st.text_input("Nombre Completo")
+        with c2:
+            contacto = st.text_input("Contacto (Teléfono/Email)")
+        
+        id_distrito = None
+        if not df_distritos.empty:
+            # Diccionario para el selector: {ID: Nombre}
+            lista_d = {r['Id_distrito']: r['Nombre'] for i, r in df_distritos.iterrows()}
+            id_distrito = st.selectbox("Asignar Distrito:", options=lista_d.keys(), format_func=lambda x: lista_d[x])
+        else:
+            st.warning("No hay distritos creados. Se registrará sin distrito.")
+            
+        if st.form_submit_button("Guardar Promotora"):
+            if nombre:
+                guardar_promotora_bd(nombre, id_distrito, contacto)
+            else:
+                st.error("El nombre es obligatorio.")
+
+# ==========================================
+# FUNCIÓN SQL: GUARDAR
+# ==========================================
+def guardar_promotora_bd(nombre, id_distrito, contacto):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Insertamos Nombre, Distrito y Contacto
+            # Asegúrate de que tu tabla Promotora tenga estas columnas
+            query = "INSERT INTO Promotora (Nombre, Id_distrito, Contacto) VALUES (%s, %s, %s)"
+            cursor.execute(query, (nombre, id_distrito, contacto))
+            conn.commit()
+            
+            st.success(f"✅ Promotora '{nombre}' registrada con éxito.")
+            st.info("Siguiente paso: Ve a 'Gestión de Usuarios' y crea su login seleccionando el rol 'Promotora'.")
+            
+        except Exception as e:
+            st.error(f"Error al guardar en BD: {e}")
+        finally:
+            conn.close()
+
+# ==========================================
+# FUNCIÓN SQL: LISTAR
+# ==========================================
+def listar_promotoras():
+    conn = obtener_conexion()
+    if conn:
+        try:
+            # Hacemos JOIN con Distrito para mostrar el nombre del lugar, no solo el número ID
+            query = """
+                SELECT p.Id_promotora, p.Nombre, p.Contacto, d.Nombre as Distrito 
+                FROM Promotora p
+                LEFT JOIN Distrito d ON p.Id_distrito = d.Id_distrito
+            """
+            df = pd.read_sql(query, conn)
+            
+            if not df.empty:
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("No hay promotoras registradas aún.")
+                
+        except Exception as e:
+            st.error(f"Error al listar: {e}")
+        finally:
+            conn.close()
