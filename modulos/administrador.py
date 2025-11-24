@@ -101,11 +101,21 @@ def fetch_referencia_data():
 # CREAR USUARIO (textbox para grupo y textbox para promotora->distrito)
 # -----------------------
 
+def menu_gestion_usuarios():
+    st.header("👤 Gestión de Usuarios y Accesos")
+    
+    tab1, tab2 = st.tabs(["➕ Crear Usuario", "📋 Lista de Usuarios"])
+    
+    with tab1:
+        create_user_form() # Llamada corregida (sin argumentos)
+        
+    with tab2:
+        listar_usuarios()
+
 def create_user_form():
-    st.subheader("Registrar Credenciales de Acceso")
+    st.subheader("Registrar Credenciales")
     st.info("Crea un usuario y contraseña para que un miembro, directiva o promotora pueda entrar al sistema.")
 
-    # 1. CARGAMOS DATOS REALES DE LA BD
     conn = obtener_conexion()
     if not conn:
         st.error("Sin conexión a BD")
@@ -115,134 +125,89 @@ def create_user_form():
     df_distritos = pd.DataFrame()
 
     try:
-        # Cargar Miembros con sus Grupos
+        # Cargamos datos para los selectores
         query_miembros = """
             SELECT m.Id_miembro, m.Nombre, m.`DUI/Identificación` as DUI, m.Id_grupo, g.Nombre as NombreGrupo
             FROM Miembro m
             JOIN Grupo g ON m.Id_grupo = g.Id_grupo
         """
         df_miembros = pd.read_sql(query_miembros, conn)
-
-        # Cargar Distritos
+        
         try:
             df_distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
         except:
             pass
-
     except Exception as e:
-        st.error(f"Error cargando datos auxiliares: {e}")
+        st.error(f"Error cargando datos: {e}")
     finally:
         conn.close()
 
-    # 2. FORMULARIO
     with st.form("form_new_user"):
-        col1, col2 = st.columns(2)
-        with col1:
-            new_username = st.text_input("Nombre de Usuario (Login)")
-        with col2:
-            new_password = st.text_input("Contraseña", type="password")
-        
-        roles_disponibles = ['miembro', 'junta directiva', 'promotora', 'administrador']
-        new_rol = st.selectbox("Rol del Usuario", roles_disponibles)
+        c1, c2 = st.columns(2)
+        new_username = c1.text_input("Usuario (Login)")
+        new_password = c2.text_input("Contraseña", type="password")
+        new_rol = st.selectbox("Rol", ['miembro', 'junta directiva', 'promotora', 'administrador'])
 
-        # Variables para guardar los IDs
         id_miembro_final = None
         id_grupo_final = None
         id_distrito_final = None
 
         st.markdown("---")
 
-        # --- LÓGICA INTELIGENTE SEGÚN ROL ---
-        
-        # CASO A: SI ES MIEMBRO O DIRECTIVA
         if new_rol in ("junta directiva", "miembro"):
             if not df_miembros.empty:
-                st.write(f"👤 **Vincular a un Miembro existente:**")
-                
+                st.write("👤 **Vincular a Miembro:**")
                 lista_opciones = {
-                    row['Id_miembro']: f"{row['Nombre']} (DUI: {row['DUI']}) - {row['NombreGrupo']}"
-                    for index, row in df_miembros.iterrows()
+                    row['Id_miembro']: f"{row['Nombre']} - {row['NombreGrupo']}"
+                    for i, row in df_miembros.iterrows()
                 }
+                id_sel = st.selectbox("Persona:", options=lista_opciones.keys(), format_func=lambda x: lista_opciones[x])
                 
-                id_seleccionado = st.selectbox(
-                    "Buscar persona:", 
-                    options=lista_opciones.keys(),
-                    format_func=lambda x: lista_opciones[x]
-                )
-                
-                # ASIGNACIÓN AUTOMÁTICA
-                if id_seleccionado:
-                    id_miembro_final = id_seleccionado
-                    
-                    # Obtener datos del DataFrame
-                    fila = df_miembros[df_miembros['Id_miembro'] == id_seleccionado].iloc[0]
+                if id_sel:
+                    id_miembro_final = id_sel
+                    fila = df_miembros[df_miembros['Id_miembro'] == id_sel].iloc[0]
                     id_grupo_final = int(fila['Id_grupo'])
-                    nombre_grupo = fila['NombreGrupo']
-                    
-                    # Mostrar confirmación visual DENTRO del formulario
-                    st.info(f"✅ Se vinculará al **ID Miembro: {id_miembro_final}** del Grupo **{nombre_grupo}** (ID: {id_grupo_final})")
+                    st.info(f"✅ Se vinculará a: **{fila['Nombre']}** del grupo **{fila['NombreGrupo']}**")
             else:
-                st.warning("⚠️ No hay miembros registrados. Registre miembros primero.")
+                st.warning("No hay miembros registrados.")
 
-        # CASO B: PROMOTORA
         elif new_rol == 'promotora':
             if not df_distritos.empty:
-                st.write("📍 **Asignar Distrito:**")
                 lista_dist = {row['Id_distrito']: row['Nombre'] for i, row in df_distritos.iterrows()}
-                id_distrito_final = st.selectbox("Seleccione:", options=lista_dist.keys(), format_func=lambda x: lista_dist[x])
+                id_distrito_final = st.selectbox("Asignar Distrito:", options=lista_dist.keys(), format_func=lambda x: lista_dist[x])
             else:
                 st.warning("No hay distritos registrados.")
 
-        # 3. BOTÓN DE GUARDADO
-        st.markdown("---")
-        submitted = st.form_submit_button("Crear Usuario")
-
-        if submitted:
+        if st.form_submit_button("Crear Usuario"):
             if new_username and new_password:
-                # Llamamos a la función de guardado
-                guardar_usuario_bd(
-                    new_username, 
-                    new_password, 
-                    new_rol, 
-                    id_miembro_final, 
-                    id_grupo_final, 
-                    id_distrito_final
-                )
+                guardar_usuario_bd(new_username, new_password, new_rol, id_miembro_final, id_grupo_final, id_distrito_final)
             else:
-                st.error("Usuario y contraseña son obligatorios.")
+                st.error("Faltan datos.")
 
 def guardar_usuario_bd(usuario, password, rol, id_miembro, id_grupo, id_distrito):
     conn = obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
-            
-            # Validación de duplicados
             cursor.execute("SELECT Usuario FROM Login WHERE Usuario = %s", (usuario,))
             if cursor.fetchone():
-                st.error("⛔ Este nombre de usuario ya existe.")
+                st.error("El usuario ya existe.")
                 return
 
-            # INSERT
             query = """
                 INSERT INTO Login (Usuario, Contraseña, Rol, Id_miembro, Id_grupo, Id_distrito) 
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
-            
-            # Sanitización de datos
+            # Sanitización de tipos
             id_m = int(id_miembro) if id_miembro is not None else None
             id_g = int(id_grupo) if id_grupo is not None else None
             id_d = int(id_distrito) if id_distrito is not None else None
 
             cursor.execute(query, (usuario, password, rol, id_m, id_g, id_d))
             conn.commit()
-            
-            st.success(f"✅ Usuario '{usuario}' creado exitosamente.")
-            if id_m:
-                st.caption(f"🔗 Vinculado a Miembro ID: {id_m}")
-            
+            st.success("Usuario creado exitosamente.")
         except Exception as e:
-            st.error(f"Error al guardar: {e}")
+            st.error(f"Error: {e}")
         finally:
             conn.close()
 
@@ -250,9 +215,8 @@ def listar_usuarios():
     conn = obtener_conexion()
     if conn:
         try:
-            st.subheader("Usuarios Registrados")
-            query = "SELECT Id_usuario, Usuario, Rol, Id_miembro, Id_grupo FROM Login"
-            df = pd.read_sql(query, conn)
+            st.subheader("Lista de Usuarios")
+            df = pd.read_sql("SELECT Id_usuario, Usuario, Rol, Id_miembro, Id_grupo FROM Login", conn)
             st.dataframe(df, use_container_width=True)
         finally:
             conn.close()
@@ -534,10 +498,10 @@ def administrador_page():
         menu_gestion_usuarios()
         
     elif seleccion == "Grupos y Distritos":
-        menu_grupos_distritos() # Placeholder
+        create_new_group(ref_data)
         
     elif seleccion == "Ciclos":
-        menu_ciclos() # Placeholder
+        create_cycle_form(ref_data)
         
     elif seleccion == "Reportes Consolidados":
         show_admin_reports()
