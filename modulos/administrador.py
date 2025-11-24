@@ -101,18 +101,6 @@ def fetch_referencia_data():
 # CREAR USUARIO (textbox para grupo y textbox para promotora->distrito)
 # -----------------------
 
-def administrador_page():
-    st.title("Panel de Administrador")
-    st.markdown("---")
-    
-    tab1, tab2 = st.tabs(["➕ Crear Usuario", "📋 Lista de Usuarios"])
-    
-    with tab1:
-        create_user_form()
-        
-    with tab2:
-        listar_usuarios()
-
 def create_user_form():
     st.subheader("Registrar Credenciales de Acceso")
     st.info("Crea un usuario y contraseña para que un miembro, directiva o promotora pueda entrar al sistema.")
