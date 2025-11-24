@@ -1,31 +1,21 @@
 import streamlit as st
-import time
-
-# --- GESTIÓN DE IMPORTACIONES DE CONEXIÓN ---
+# Asegúrate de que esta ruta sea correcta según tu estructura de carpetas
 try:
     from modulos.config.conexion import obtener_conexion
 except ImportError:
-    try:
-        from config.conexion import obtener_conexion
-    except ImportError:
-        try:
-            from conexion import obtener_conexion
-        except ImportError:
-            st.error("❌ Error crítico: No se encuentra el archivo de conexión.")
-            st.stop()
+    # Intento alternativo por si cambió la ruta
+    from conexion import obtener_conexion
 
-# ==============================================================================
-# FUNCIÓN 1: VERIFICAR CREDENCIALES (TABLA LOGIN)
-# ==============================================================================
 def verificar_usuario(Usuario, Contraseña, Rol):
     con = obtener_conexion()
     if not con:
-        st.error("⚠️ No se pudo conectar a la base de datos.")
+        st.error("⚠ No se pudo conectar a la base de datos.")
         return None
 
     try:
         cursor = con.cursor(dictionary=True)
-        # Verificamos credenciales básicas
+
+        # Seleccionamos también el Id_distrito para validar
         query = """
             SELECT Usuario, Rol, Id_grupo, Id_distrito 
             FROM Login 
@@ -34,133 +24,77 @@ def verificar_usuario(Usuario, Contraseña, Rol):
         cursor.execute(query, (Usuario, Contraseña, Rol))
         result = cursor.fetchone()
         return result 
+
     except Exception as e:
-        st.error(f"Error en Login: {e}")
+        st.error(f"Error en la consulta: {e}")
         return None
     finally:
         if con.is_connected():
             con.close()
 
-# ==============================================================================
-# FUNCIÓN 2 (NUEVA): VERIFICAR IDENTIDAD EN TABLA PROMOTORA
-# ==============================================================================
-def validar_identidad_promotora(nombre_usuario, id_distrito):
-    """
-    Busca en la tabla 'Promotora' si existe alguien con ese nombre en ese distrito.
-    """
-    con = obtener_conexion()
-    existe = False
-    
-    if con:
-        try:
-            cursor = con.cursor()
-            # ⚠️ IMPORTANTE: Ajusta 'nombre_promotora' si tu columna se llama solo 'Nombre'
-            # Esta consulta busca que el nombre coincida Y que pertenezca al distrito seleccionado.
-            query = """
-                SELECT COUNT(*) 
-                FROM Promotora 
-                WHERE nombre_promotora = %s AND id_distrito = %s
-            """
-            cursor.execute(query, (nombre_usuario, id_distrito))
-            
-            # Obtenemos el conteo (si es 1 o más, existe)
-            resultado = cursor.fetchone()
-            if resultado[0] > 0:
-                existe = True
-                
-            cursor.close()
-            con.close()
-        except Exception as e:
-            # Si falla (ej: la tabla Promotora no existe), mostramos error pero asumimos falso
-            st.error(f"Error verificando tabla Promotora: {e}")
-    
-    return existe
-
-# ==============================================================================
-# FUNCIÓN: PÁGINA DE LOGIN
-# ==============================================================================
 def login_page():
     st.title("Inicio de sesión - GAPC")
-    st.markdown("---")
 
+    # Contenedor para el formulario
     with st.form("login_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            Usuario = st.text_input("👤 Usuario")
-        with col2:
-            Contraseña = st.text_input("🔑 Contraseña", type="password")
+        Usuario = st.text_input("Usuario")
+        Contraseña = st.text_input("Contraseña", type="password")
         
         Roles = ["administrador", "promotora", "miembro", "junta directiva"]
         Rol = st.selectbox("Seleccione su Rol", Roles)
         
-        # --- SELECTOR DE DISTRITO ---
+        # --- NUEVA LÓGICA: SELECTOR DE DISTRITO ---
         distrito_seleccionado = None
+        
         if Rol == "promotora":
-            st.info("📍 Verificación de Zona")
-            distrito_seleccionado = st.selectbox(
-                "Seleccione el Número de Distrito asignado:",
-                options=[1, 2, 3],
-                help="Seleccione el distrito que le corresponde administrar."
+            st.info("👤 Como Promotora, confirme su zona de trabajo.")
+            # Aquí el usuario selecciona el ID del distrito (ej: 1, 2, 3...)
+            distrito_seleccionado = st.number_input(
+                "Ingrese el Número de Distrito asignado", 
+                min_value=1, 
+                step=1,
+                help="Debe coincidir con el distrito registrado en su usuario."
             )
 
-        submitted = st.form_submit_button("Iniciar sesión", use_container_width=True)
+        submitted = st.form_submit_button("Iniciar sesión")
 
     if submitted:
         if not Usuario or not Contraseña:
-            st.warning("⚠️ Por favor ingrese usuario y contraseña.")
+            st.warning("Por favor ingrese usuario y contraseña.")
             return
 
-        # PASO 1: Verificar Credenciales en Tabla LOGIN
+        # 1. Verificamos credenciales en la Base de Datos
         user_data = verificar_usuario(Usuario, Contraseña, Rol)
 
         if user_data:
-            
-            # --- VALIDACIONES EXCLUSIVAS PARA PROMOTORA ---
+            # 2. VALIDACIÓN EXTRA PARA PROMOTORA
+            # Verificamos si el distrito que escribió coincide con el de la BD
             if Rol == "promotora":
+                db_distrito = user_data.get('Id_distrito')
                 
-                # A) Validación Cruzada Login vs Selección
-                # ----------------------------------------
-                db_distrito_id = user_data.get('Id_distrito')
-                
-                if db_distrito_id is None:
-                    st.error("⛔ Error de cuenta: Usuario sin distrito asignado en tabla Login.")
-                    return
+                # Si en la BD no tiene distrito o no coincide con el seleccionado:
+                if db_distrito != distrito_seleccionado:
+                    st.error(f"⛔ Error de Seguridad: El usuario '{Usuario}' no está autorizado para acceder al Distrito {distrito_seleccionado}. Su distrito registrado es el {db_distrito}.")
+                    return # Detenemos el login aquí
 
-                if int(db_distrito_id) != distrito_seleccionado:
-                    st.error(f"🚫 Error de Zona: Su usuario pertenece al Distrito {db_distrito_id}, no al {distrito_seleccionado}.")
-                    return 
-
-                # B) Validación de Identidad en Tabla PROMOTORA (TU REQUERIMIENTO)
-                # ---------------------------------------------------------------
-                # Verificamos que el Usuario exista en la columna Nombre de la tabla Promotora
-                es_promotora_valida = validar_identidad_promotora(Usuario, distrito_seleccionado)
-                
-                if not es_promotora_valida:
-                    st.error(f"❌ Acceso Denegado: El usuario '{Usuario}' no aparece registrado en la lista oficial de la tabla 'Promotora' para el Distrito {distrito_seleccionado}.")
-                    st.info("Nota: Asegúrese de que su Nombre de Usuario coincida exactamente con su Nombre registrado en la tabla Promotora.")
-                    return
-
-            # --- SI PASA TODAS LAS VALIDACIONES ---
+            # --- SI PASA LAS VALIDACIONES, GUARDAMOS SESIÓN ---
             st.session_state['logged_in'] = True
             st.session_state['user_role'] = user_data['Rol']
             st.session_state['user_name'] = user_data['Usuario']
+            
+            # Guardamos los IDs clave para usar en los otros archivos
             st.session_state['grupo_id'] = user_data.get('Id_grupo')
+            
+            # Aquí guardamos el distrito validado (ya sea el seleccionado o el de la BD)
+            # Nota: Usamos 'id_distrito_actual' porque así lo llamamos en los archivos anteriores (distrito.py y promotora.py)
             st.session_state['id_distrito_actual'] = user_data.get('Id_distrito')
             
-            st.success(f"✅ Identidad verificada. Bienvenido/a {user_data['Usuario']}.")
-            time.sleep(1)
+            st.success(f"¡Bienvenido! Accediendo al entorno de {Rol}...")
             st.rerun()
             
         else:
-            st.error("❌ Credenciales incorrectas.")
+            st.error("❌ Credenciales incorrectas o el rol seleccionado no coincide con el usuario.")
 
-if __name__ == "__main__":
-    login_page()
-```
-
-### ⚠️ Requisito Importante para que funcione
-
-En la función `validar_identidad_promotora` (línea 46), he usado esta consulta:
-
-```sql
-SELECT COUNT(*) FROM Promotora WHERE nombre_promotora = %s AND id_distrito = %s
+# Para probarlo localmente si ejecutas este archivo solo
+if _name_ == "_main_":
+    login_page()
