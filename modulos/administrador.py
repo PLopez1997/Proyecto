@@ -508,6 +508,6 @@ def administrador_page():
     elif seleccion == "Ciclos":
         create_cycle_form(ref_data)
     elif seleccion == "Reportes Consolidados":
-        show_reports()
+        show_admin_reports()
 
 
