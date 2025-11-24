@@ -540,7 +540,7 @@ def administrador_page():
     st.title("Panel de Administración")
     
     # --- MENÚ LATERAL ---
-    opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Ciclos", "Reportes Consolidados" "Gestión de Promotoras"]
+    opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Ciclos", "Reportes Consolidados", "Gestión de Promotoras"]
     seleccion = st.sidebar.selectbox("Sección", opciones)
     
     st.sidebar.markdown("---")
