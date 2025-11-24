@@ -387,7 +387,7 @@ def create_new_group(ref_data):
 # -----------------------
 
 def show_reports():
-    st.header("📊 Reportes del Grupo y Caja Común")
+    st.header("📊 Reportes de los Grupos y Caja Común")
     
     conn = obtener_conexion()
     if not conn:
