@@ -386,73 +386,103 @@ def create_new_group(ref_data):
 # REPORTES: leer tabla caja si existe
 # -----------------------
 
-def show_reports():
-    st.header("📊 Reportes de los Grupos y Caja Común")
+def show_admin_reports():
+    st.header("📊 Tablero Financiero Maestro (Admin)")
     
     conn = obtener_conexion()
     if not conn:
-        st.error("No hay conexión.")
+        st.error("Error de conexión.")
         return
 
     try:
-        grupo_id = st.session_state.get('grupo_id')
-        
-        # --- PARTE A: DATOS GLOBALES (LA CAJA COMÚN) ---
-        # Calculamos el saldo de TODA la organización
-        query_global = "SELECT Tipo_transaccion, Monto FROM Caja"
-        df_global = pd.read_sql(query_global, conn)
-        
-        saldo_global = 0.0
-        if not df_global.empty:
-            ingresos_totales = df_global[df_global['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
-            egresos_totales = df_global[df_global['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
-            saldo_global = ingresos_totales - egresos_totales
-        
-        # --- PARTE B: DATOS LOCALES (SOLO DE ESTE GRUPO) ---
-        # Para el historial, solo mostramos lo que ESTE grupo ha aportado/gastado
-        query_local = """
-            SELECT Fecha, Detalle, Tipo_transaccion, Monto 
-            FROM Caja 
-            WHERE Id_grupo = %s 
-            ORDER BY Fecha DESC
-        """
-        df_local = pd.read_sql(query_local, conn, params=(grupo_id,))
+        # 1. OBTENER LISTA DE GRUPOS PARA EL FILTRO
+        grupos_dict = {0: "👁️ Ver Todos los Grupos"} # Opción por defecto
+        try:
+            # Asumo que tu tabla se llama 'Grupo' y tiene 'Id_grupo' y 'Nombre'
+            # Si se llama 'Grupos', ajusta el FROM.
+            cursor = conn.cursor()
+            cursor.execute("SELECT Id_grupo, Nombre FROM Grupo") 
+            for id_g, nom in cursor.fetchall():
+                grupos_dict[id_g] = f"Grupo {id_g}: {nom}"
+        except Exception as e:
+            st.warning(f"No se pudo cargar la lista de grupos (¿Tabla 'Grupo' existe?): {e}")
 
-        # --- VISUALIZACIÓN ---
-        
-        # 1. KPI PRINCIPAL (GLOBAL)
-        st.info("ℹ️ Nota: El saldo mostrado pertenece a la Caja Común de todos los grupos.")
-        st.metric("💰 SALDO DISPONIBLE (Fondo Común)", f"${saldo_global:,.2f}")
-        
+        # --- FILTRO SUPERIOR ---
+        col_filtro, col_vacio = st.columns([1, 2])
+        with col_filtro:
+            grupo_seleccionado = st.selectbox(
+                "Filtrar Movimientos:", 
+                options=grupos_dict.keys(), 
+                format_func=lambda x: grupos_dict[x]
+            )
+
         st.markdown("---")
 
-        if not df_local.empty:
-            st.subheader("📜 Historial de Movimientos de MI GRUPO")
-            
-            # Métricas locales (solo informativas)
-            local_ing = df_local[df_local['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
-            local_egr = df_local[df_local['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Aportes de este Grupo", f"${local_ing:,.2f}")
-            c2.metric("Retiros de este Grupo", f"${local_egr:,.2f}")
-
-            # Formato de fecha
-            if 'Fecha' in df_local.columns:
-                df_local['Fecha'] = pd.to_datetime(df_local['Fecha']).dt.date
-            
-            # Tabla
-            st.dataframe(df_local, use_container_width=True)
-
-            # Gráfico
-            st.caption("Tendencia de aportes y retiros de este grupo")
-            st.bar_chart(df_local, x="Fecha", y="Monto", color="Tipo_transaccion")
-            
+        # 2. LÓGICA DE CONSULTA (Dinámica según el filtro)
+        # Usamos LEFT JOIN para traer el nombre del grupo junto con el movimiento
+        if grupo_seleccionado == 0:
+            # CASO A: VER TODO
+            query = """
+                SELECT c.Fecha, g.Nombre as Grupo, c.Detalle, c.Tipo_transaccion, c.Monto 
+                FROM Caja c
+                LEFT JOIN Grupo g ON c.Id_grupo = g.Id_grupo
+                ORDER BY c.Fecha DESC
+            """
+            params = ()
         else:
-            st.info("Este grupo aún no ha registrado movimientos en la caja común.")
+            # CASO B: FILTRAR UN GRUPO
+            query = """
+                SELECT c.Fecha, g.Nombre as Grupo, c.Detalle, c.Tipo_transaccion, c.Monto 
+                FROM Caja c
+                LEFT JOIN Grupo g ON c.Id_grupo = g.Id_grupo
+                WHERE c.Id_grupo = %s
+                ORDER BY c.Fecha DESC
+            """
+            params = (grupo_seleccionado,)
+
+        df = pd.read_sql(query, conn, params=params)
+
+        # 3. CÁLCULO DE TOTALES (KPIs)
+        # Calculamos sobre lo que se está viendo en pantalla (Filtrado o Total)
+        if not df.empty:
+            ingresos = df[df['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
+            egresos = df[df['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
+            balance = ingresos - egresos
+
+            # Tarjetas de colores
+            kpi1, kpi2, kpi3 = st.columns(3)
+            kpi1.metric("Ingresos (Vista Actual)", f"${ingresos:,.2f}")
+            kpi2.metric("Egresos (Vista Actual)", f"${egresos:,.2f}")
+            kpi3.metric("Balance Neto", f"${balance:,.2f}", delta_color="normal")
+
+            # 4. TABLA DETALLADA
+            st.subheader("📜 Detalle de Transacciones")
+            
+            # Limpieza de fecha
+            if 'Fecha' in df.columns:
+                df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+
+            st.dataframe(df, use_container_width=True)
+
+            # 5. GRÁFICO COMPARATIVO
+            st.subheader("Tendencia Visual")
+            
+            if grupo_seleccionado == 0:
+                # Si vemos todo, un gráfico interesante es ver "Monto por Grupo"
+                # Agrupamos por nombre de grupo y tipo
+                st.caption("Comparativa de volumen por Grupo")
+                chart_data = df.groupby(['Grupo', 'Tipo_transaccion'])['Monto'].sum().reset_index()
+                st.bar_chart(chart_data, x="Grupo", y="Monto", color="Tipo_transaccion")
+            else:
+                # Si vemos uno solo, mostramos su historial en el tiempo
+                st.caption("Evolución temporal del grupo")
+                st.bar_chart(df, x="Fecha", y="Monto", color="Tipo_transaccion")
+
+        else:
+            st.info("No se encontraron movimientos para los criterios seleccionados.")
 
     except Exception as e:
-        st.error(f"Error cargando reportes: {e}")
+        st.error(f"Error en reporte de admin: {e}")
     finally:
         conn.close()
 
