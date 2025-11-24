@@ -6,44 +6,62 @@
 
 import streamlit as st
 import pandas as pd
-# Asegúrate de que esta importación sea correcta según tu estructura de archivos
-from modulos.config.conexion import obtener_conexion
+
+# --- IMPORTACIÓN SEGURA DE LA CONEXIÓN ---
+# Intenta varias rutas para encontrar el archivo de conexión
+try:
+    from modulos.config.conexion import obtener_conexion
+except ImportError:
+    try:
+        from config.conexion import obtener_conexion
+    except ImportError:
+        try:
+            from conexion import obtener_conexion
+        except ImportError:
+            st.error("❌ Error crítico: No se encuentra el archivo de conexión.")
+            st.stop()
 
 # ==============================================================================
 # SECCIÓN 1: FUNCIONES AUXILIARES DE CONSULTA SQL (BACKEND)
-# Estas funciones se encargan de traer los datos de la BD.
 # ==============================================================================
 
 def obtener_info_distrito(id_distrito):
     """Obtiene los datos generales del distrito."""
-    conn = obtener_conexion
+    conn = obtener_conexion() # Paréntesis corregidos: () es vital para ejecutar la función
     data = None
     if conn:
         try:
             cursor = conn.cursor(dictionary=True)
-            # Nombres de columnas basados en Imagen 1 (Distrito)
+            # Asegúrate que los nombres de columnas coincidan con tu BD
             query = "SELECT * FROM Distrito WHERE id_distrito = %s"
             cursor.execute(query, (id_distrito,))
             data = cursor.fetchone()
             cursor.close()
             conn.close()
         except Exception as e:
-             st.error(f"Error BD (Distrito): {e}")
+            st.error(f"Error BD (Distrito): {e}")
     return data
 
 def obtener_grupos_del_distrito_df(id_distrito):
     """Devuelve un DataFrame con los grupos de UN distrito específico."""
-    conn = obtener_conexion
-    df = pd.DataFrame()
+    conn = obtener_conexion()
+    
+    # Creamos un DF vacío con estructura por defecto para evitar errores si falla la consulta
+    df = pd.DataFrame(columns=['id_grupo', 'nombre_grupo', 'ubicacion_grupo', 'fecha_creacion'])
+    
     if conn:
         try:
-            # Columnas basadas en Imagen 2 (Grupo), filtrando por FK id_distrito
+            # Usamos ALIAS (AS) para que Python reciba los nombres estandarizados
+            # Ajusta 'Nombre', 'Ubicacion' si en tu BD se llaman diferente
             query = """
-                SELECT id_grupo, nombre_grupo, ubicacion_grupo, fecha_creacion 
+                SELECT Id_grupo AS id_grupo, Nombre AS nombre_grupo, Ubicacion AS ubicacion_grupo, Fecha_inicio AS fecha_creacion 
                 FROM Grupo 
-                WHERE id_distrito = %s
+                WHERE Id_distrito = %s
             """
-            df = pd.read_sql(query, conn, params=(id_distrito,))
+            df_resultado = pd.read_sql(query, conn, params=(id_distrito,))
+            if not df_resultado.empty:
+                df = df_resultado
+            
             conn.close()
         except Exception as e:
             st.error(f"Error BD (Grupos): {e}")
@@ -51,68 +69,69 @@ def obtener_grupos_del_distrito_df(id_distrito):
 
 def obtener_miembros_del_grupo_df(id_grupo):
     """Devuelve un DataFrame con los miembros de UN grupo específico."""
-    conn = obtener_conexion
-    df = pd.DataFrame()
+    conn = obtener_conexion()
+    
+    # Estructura vacía por defecto
+    df = pd.DataFrame(columns=['id_miembro', 'nombre_completo', 'dni_miembro'])
+    
     if conn:
         try:
-            # Columnas basadas en Imagen 3 (Miembro), filtrando por FK id_grupo
-            # Concatenamos nombre y apellido para mostrarlo mejor en el selector
+            # Concatenamos nombre para mostrarlo mejor en el selector
             query = """
-                SELECT id_miembro, CONCAT(nombre_miembro, ' ', apellido_miembro) as nombre_completo, 
-                       direccion_miembro, telefono_miembro, dni_miembro, fecha_ingreso
+                SELECT Id_miembro AS id_miembro, Nombre AS nombre_completo, 
+                       Direccion, Telefono, Dni AS dni_miembro, Fecha_ingreso
                 FROM Miembro 
-                WHERE id_grupo = %s
+                WHERE Id_grupo = %s
             """
-            df = pd.read_sql(query, conn, params=(id_grupo,))
+            df_resultado = pd.read_sql(query, conn, params=(id_grupo,))
+            if not df_resultado.empty:
+                df = df_resultado
+            
             conn.close()
         except Exception as e:
             st.error(f"Error BD (Miembros): {e}")
     return df
 
-# --- Funciones para detalles financieros de un miembro ---
-
-def obtener_prestamos_miembro(id_miembro):
-    # Basado en Imagen 4 (Prestamo)
-    sql = """SELECT id_prestamo, monto_prestamo, tasa_interes, plazo_meses, 
-             fecha_inicio, fecha_vencimiento, estado_prestamo 
-             FROM Prestamo WHERE id_miembro = %s"""
-    return _ejecutar_consulta_df(sql, id_miembro)
-
-def obtener_ahorros_miembro(id_miembro):
-    # Basado en Imagen 5 (Ahorro)
-    sql = """SELECT id_ahorro, monto_ahorro, fecha_ahorro, tipo_ahorro 
-             FROM Ahorro WHERE id_miembro = %s"""
-    return _ejecutar_consulta_df(sql, id_miembro)
-
-def obtener_multas_miembro(id_miembro):
-    # Basado en Imagen 7 (Multa)
-    sql = """SELECT id_multa, monto_multa, fecha_multa, motivo_multa, estado_multa 
-             FROM Multa WHERE id_miembro = %s"""
-    return _ejecutar_consulta_df(sql, id_miembro)
-
-def obtener_pagos_miembro(id_miembro):
-    # Basado en Imagen 6 (Pago).
-    # ¡IMPORTANTE!: La tabla Pago no tiene id_miembro directo.
-    # Hay que hacer un JOIN con la tabla Prestamo para relacionarlos.
-    sql = """
-            SELECT P.id_pago, P.monto_pago, P.fecha_pago, Pr.id_prestamo, Pr.estado_prestamo
-            FROM Pago P
-            INNER JOIN Prestamo Pr ON P.id_prestamo = Pr.id_prestamo
-            WHERE Pr.id_miembro = %s
-          """
-    return _ejecutar_consulta_df(sql, id_miembro)
+# --- Funciones privadas para detalles financieros ---
 
 def _ejecutar_consulta_df(query, parametro_id):
-    """Función genérica privada para ejecutar consultas y devolver DataFrames"""
-    conn = create_connection()
-    df = pd.DataFrame()
+    """Función genérica privada para ejecutar consultas y devolver DataFrames de forma segura"""
+    conn = obtener_conexion()
+    df = pd.DataFrame() # DF vacío por defecto
     if conn:
         try:
             df = pd.read_sql(query, conn, params=(parametro_id,))
             conn.close()
         except Exception as e:
-            st.error(f"Error BD en consulta de detalles: {e}")
+            # No mostramos error rojo en pantalla para no ensuciar la interfaz
+            print(f"Error consulta detalle: {e}")
     return df
+
+def obtener_prestamos_miembro(id_miembro):
+    sql = """SELECT Id_prestamo, Monto AS monto_prestamo, Tasa_interes, Plazo AS plazo_meses, 
+             Fecha_inicio, Fecha_vencimiento, Estado AS estado_prestamo 
+             FROM Prestamo WHERE Id_miembro = %s"""
+    return _ejecutar_consulta_df(sql, id_miembro)
+
+def obtener_ahorros_miembro(id_miembro):
+    sql = """SELECT Id_ahorro, Monto AS monto_ahorro, Fecha AS fecha_ahorro, Tipo_ahorro 
+             FROM Ahorro WHERE Id_miembro = %s"""
+    return _ejecutar_consulta_df(sql, id_miembro)
+
+def obtener_multas_miembro(id_miembro):
+    sql = """SELECT Id_multa, Monto AS monto_multa, Fecha AS fecha_multa, Motivo AS motivo_multa, Estado AS estado_multa 
+             FROM Multa WHERE Id_miembro = %s"""
+    return _ejecutar_consulta_df(sql, id_miembro)
+
+def obtener_pagos_miembro(id_miembro):
+    # Ajusta 'Monto_capital' si tu columna se llama diferente en la tabla Pago
+    sql = """
+            SELECT P.Id_pago, P.Monto_capital, P.Fecha_pago, Pr.Id_prestamo
+            FROM Pago P
+            INNER JOIN Prestamo Pr ON P.Id_prestamo = Pr.Id_prestamo
+            WHERE Pr.Id_miembro = %s
+          """
+    return _ejecutar_consulta_df(sql, id_miembro)
 
 
 # ==============================================================================
@@ -121,13 +140,11 @@ def _ejecutar_consulta_df(query, parametro_id):
 
 def app():
     # -----------------------------------------------------------
-    # 1. Validación de Seguridad (Crucial)
+    # 1. Validación de Seguridad
     # -----------------------------------------------------------
-    # Se asume que en el login (auth.py) guardaste el 'id_distrito' en session_state.
-    # Si no lo hiciste, esta pantalla no debe cargar.
     if 'id_distrito_actual' not in st.session_state or st.session_state['id_distrito_actual'] is None:
-        st.error("⚠️ Acceso denegado. No se ha detectado un distrito asociado a su sesión. Por favor, inicie sesión nuevamente.")
-        st.stop() # Detiene la ejecución aquí.
+        st.warning("⚠️ No se ha detectado un distrito. Por favor inicie sesión nuevamente.")
+        return # Salimos suavemente sin error rojo
 
     id_distrito_sesion = st.session_state['id_distrito_actual']
 
@@ -139,110 +156,101 @@ def app():
     st.title("🏡 Entorno de Promotora")
 
     if info_distrito:
-        # Mostramos la info general del distrito en la parte superior
         col1, col2, col3 = st.columns(3)
-        col1.metric("Distrito", info_distrito['nombre_distrito'])
-        col2.metric("Ubicación", info_distrito['ubicacion_distrito'])
-        col3.metric("Coordinador", info_distrito['coordinador_distrito'])
+        # Usamos .get() para evitar errores si la columna se llama distinto
+        col1.metric("Distrito", info_distrito.get('nombre_distrito', 'S/D'))
+        col2.metric("Ubicación", info_distrito.get('ubicacion_distrito', 'S/D'))
+        col3.metric("Coordinador", info_distrito.get('coordinador_distrito', 'S/D'))
         st.divider()
     else:
-        st.warning("No se pudo cargar la información detallada del distrito.")
+        # Mensaje discreto si falla la carga del distrito pero queremos seguir
+        st.caption("Cargando información del distrito...")
 
     st.subheader("Navegación de Grupos y Miembros")
-    st.info("Seleccione un grupo y luego un miembro para ver sus detalles financieros.")
 
     # -----------------------------------------------------------
     # 3. Selector de GRUPOS (Nivel 1)
     # -----------------------------------------------------------
-    # Obtenemos los grupos SOLO del distrito actual
     df_grupos = obtener_grupos_del_distrito_df(id_distrito_sesion)
 
     if df_grupos.empty:
-        st.warning(f"No hay grupos registrados en el distrito {info_distrito.get('nombre_distrito','actual')}.")
-        st.stop()
+        st.info(f"No hay grupos registrados en este distrito todavía.")
+        return
 
-    # Creamos un diccionario para el selector: { "Nombre Grupo": id_grupo }
-    grupos_dict = dict(zip(df_grupos['nombre_grupo'], df_grupos['id_grupo']))
+    # Diccionario seguro: { "Nombre": ID }
+    try:
+        grupos_dict = dict(zip(df_grupos['nombre_grupo'], df_grupos['id_grupo']))
+        grupo_seleccionado_nombre = st.selectbox("📂 Paso 1: Seleccione un Grupo", options=grupos_dict.keys())
+    except KeyError:
+        st.error("Error en las columnas de la tabla Grupo. Verifique que existan 'Nombre' e 'Id_grupo' (o sus alias).")
+        st.dataframe(df_grupos) # Muestra qué llegó para depurar
+        return
 
-    # Selectbox para elegir el grupo. Devuelve el Nombre, usamos el dict para sacar el ID
-    grupo_seleccionado_nombre = st.selectbox("📂 Paso 1: Seleccione un Grupo", options=grupos_dict.keys())
-    id_grupo_seleccionado = grupos_dict[grupo_seleccionado_nombre]
+    if grupo_seleccionado_nombre:
+        id_grupo_seleccionado = grupos_dict[grupo_seleccionado_nombre]
 
-    # Mostrar una vista rápida de la tabla de grupos (opcional, solo lectura)
-    with st.expander(f"Ver lista de todos los grupos en {grupo_seleccionado_nombre}"):
-         st.dataframe(df_grupos, hide_index=True, use_container_width=True)
+        with st.expander(f"Ver lista de todos los grupos"):
+             st.dataframe(df_grupos, hide_index=True, use_container_width=True)
 
-    # -----------------------------------------------------------
-    # 4. Selector de MIEMBROS (Nivel 2) - Depende del grupo seleccionado
-    # -----------------------------------------------------------
-    if id_grupo_seleccionado:
+        # -----------------------------------------------------------
+        # 4. Selector de MIEMBROS (Nivel 2)
+        # -----------------------------------------------------------
         st.markdown("---")
-        # Obtenemos miembros SOLO del grupo seleccionado arriba
         df_miembros = obtener_miembros_del_grupo_df(id_grupo_seleccionado)
 
         if df_miembros.empty:
              st.warning(f"El grupo '{grupo_seleccionado_nombre}' aún no tiene miembros registrados.")
-             st.stop()
+             return # Detenemos aquí para no mostrar errores abajo
 
-        # Creamos diccionario para el selector: { "Nombre Completo (DNI)": id_miembro }
-        # Añadimos el DNI al nombre para asegurar unicidad visual
-        lista_nombres_visual = df_miembros['nombre_completo'] + " (DNI: " + df_miembros['dni_miembro'] + ")"
-        miembros_dict = dict(zip(lista_nombres_visual, df_miembros['id_miembro']))
+        # Diccionario seguro
+        try:
+            # Aseguramos que DNI sea string para evitar errores al concatenar
+            lista_nombres_visual = df_miembros['nombre_completo'] + " (DNI: " + df_miembros['dni_miembro'].astype(str) + ")"
+            miembros_dict = dict(zip(lista_nombres_visual, df_miembros['id_miembro']))
+            miembro_seleccionado_nombre = st.selectbox("👤 Paso 2: Seleccione un Miembro del grupo", options=miembros_dict.keys())
+        except KeyError:
+             st.error("Error en columnas de Miembro. Verifique 'Nombre' y 'Dni'.")
+             st.dataframe(df_miembros)
+             return
 
-        miembro_seleccionado_nombre = st.selectbox("👤 Paso 2: Seleccione un Miembro del grupo", options=miembros_dict.keys())
-        id_miembro_seleccionado = miembros_dict[miembro_seleccionado_nombre]
+        if miembro_seleccionado_nombre:
+            id_miembro_seleccionado = miembros_dict[miembro_seleccionado_nombre]
 
-
-        # -----------------------------------------------------------
-        # 5. Vista de Detalles Financieros (Nivel 3) - Depende del miembro
-        # -----------------------------------------------------------
-        if id_miembro_seleccionado:
+            # -----------------------------------------------------------
+            # 5. Vista de Detalles Financieros (Nivel 3)
+            # -----------------------------------------------------------
             st.markdown("---")
-            st.header(f"Detalles de: {miembro_seleccionado_nombre.split(' (')[0]}") # Limpiamos el nombre para el título
+            st.header(f"Detalles de: {miembro_seleccionado_nombre.split(' (')[0]}")
 
-            # Usamos pestañas para organizar las 4 tablas financieras
             tab1, tab2, tab3, tab4 = st.tabs(["💰 Préstamos", "🐷 Ahorros", "🧾 Pagos Realizados", "⚠️ Multas"])
 
             with tab1:
-                st.subheader("Historial de Préstamos")
                 df_prestamos = obtener_prestamos_miembro(id_miembro_seleccionado)
-                if df_prestamos.empty:
-                    st.info("Este miembro no tiene préstamos registrados.")
-                else:
-                    st.dataframe(df_prestamos, hide_index=True, use_container_width=True)
+                if df_prestamos.empty: st.info("Sin préstamos registrados.")
+                else: st.dataframe(df_prestamos, hide_index=True, use_container_width=True)
 
             with tab2:
-                st.subheader("Historial de Ahorros")
                 df_ahorros = obtener_ahorros_miembro(id_miembro_seleccionado)
-                if df_ahorros.empty:
-                    st.info("Este miembro no tiene ahorros registrados.")
+                if df_ahorros.empty: st.info("Sin ahorros registrados.")
                 else:
-                    # Ejemplo de métrica rápida
-                    total_ahorrado = df_ahorros['monto_ahorro'].sum()
-                    st.metric("Total Ahorrado Acumulado", f"${total_ahorrado:,.2f}")
+                    # Protección contra error de suma en columna inexistente
+                    if 'monto_ahorro' in df_ahorros.columns:
+                        total = df_ahorros['monto_ahorro'].sum()
+                        st.metric("Total Ahorrado", f"${total:,.2f}")
                     st.dataframe(df_ahorros, hide_index=True, use_container_width=True)
 
             with tab3:
-                st.subheader("Historial de Pagos")
                 df_pagos = obtener_pagos_miembro(id_miembro_seleccionado)
-                if df_pagos.empty:
-                    st.info("No hay registros de pagos para los préstamos de este miembro.")
-                else:
-                    st.dataframe(df_pagos, hide_index=True, use_container_width=True)
+                if df_pagos.empty: st.info("Sin registros de pagos.")
+                else: st.dataframe(df_pagos, hide_index=True, use_container_width=True)
 
             with tab4:
-                st.subheader("Multas y Sanciones")
                 df_multas = obtener_multas_miembro(id_miembro_seleccionado)
-                if df_multas.empty:
-                    st.success("¡Excelente! Este miembro no tiene multas registradas.")
-                else:
-                    st.dataframe(df_multas, hide_index=True, use_container_width=True)
+                if df_multas.empty: st.success("Sin multas.")
+                else: st.dataframe(df_multas, hide_index=True, use_container_width=True)
 
-# Esta línea final es necesaria si ejecutas este archivo directamente para pruebas,
-# pero en tu app principal llamarás a distrito.app()
+# Solo para pruebas locales
 if __name__ == "__main__":
-    # ESTO ES SOLO PARA PRUEBAS LOCALES SI EJECUTAS ESTE ARCHIVO SOLO
-    # Simula que una promotora del distrito con ID 1 inició sesión
     st.session_state['id_distrito_actual'] = 1
     st.set_page_config(layout="wide")
     app()
