@@ -101,142 +101,143 @@ def fetch_referencia_data():
 # CREAR USUARIO (textbox para grupo y textbox para promotora->distrito)
 # -----------------------
 
-def create_user_form(ref_data):
-    st.subheader("➕ Registrar Nuevo Usuario")
+def create_user_form():
+    st.subheader("➕ Registrar Nuevo Usuario del Sistema")
+    st.info("Aquí creas las credenciales (Usuario/Clave) y las vinculas a una persona real.")
 
-    grupos_list = list(ref_data["grupos"]["Nombre"]) if not ref_data["grupos"].empty else []
-    distritos_list = list(ref_data["distritos"]["Nombre"]) if not ref_data["distritos"].empty else []
+    # 1. CARGAMOS DATOS REALES DE LA BD (Para los selectores)
+    conn = obtener_conexion()
+    if not conn:
+        st.error("Sin conexión a BD")
+        return
 
+    try:
+        # Cargar Miembros (para vincular usuarios normales y directiva)
+        # Traemos también el nombre del grupo para que sea fácil identificar
+        query_miembros = """
+            SELECT m.Id_miembro, m.Nombre, m.`DUI/Identificación` as DUI, m.Id_grupo, g.Nombre as NombreGrupo
+            FROM Miembro m
+            JOIN Grupo g ON m.Id_grupo = g.Id_grupo
+        """
+        df_miembros = pd.read_sql(query_miembros, conn)
+
+        # Cargar Distritos (para promotoras)
+        # Asumiendo que tienes tabla Distrito
+        try:
+            df_distritos = pd.read_sql("SELECT Id_distrito, Nombre FROM Distrito", conn)
+        except:
+            df_distritos = pd.DataFrame() # Por si no existe aún la tabla
+
+    finally:
+        conn.close()
+
+    # 2. FORMULARIO DE REGISTRO
     with st.form("form_new_user"):
-        new_username = st.text_input("Nombre de Usuario (Login)")
-        new_password = st.text_input("Contraseña", type="password")
-        new_rol = st.selectbox("Rol del Usuario", ['administrador','promotora','junta directiva','miembro'])
+        col_u1, col_u2 = st.columns(2)
+        with col_u1:
+            new_username = st.text_input("Nombre de Usuario (Login)")
+        with col_u2:
+            new_password = st.text_input("Contraseña", type="password")
+        
+        # Seleccionamos el rol
+        roles_disponibles = ['miembro', 'junta directiva', 'promotora', 'administrador']
+        new_rol = st.selectbox("Rol del Usuario", roles_disponibles)
 
-        asignar_grupo_text = None
-        asignar_distrito_text = None
+        # VARIABLES PARA GUARDAR
+        id_miembro_sel = None
+        id_grupo_sel = None
+        id_distrito_sel = None
 
-        if new_rol in ("junta directiva","miembro"):
-            st.info("Escribe el **Nombre exacto** del grupo tal como aparece en la tabla 'grupos' (Capital inicial).")
-            asignar_grupo_text = st.text_input("Nombre del Grupo (texto exacto)")
+        # --- LÓGICA DINÁMICA SEGÚN ROL ---
+        
+        # CASO A: SI ES MIEMBRO O DIRECTIVA -> VINCULAR A UN MIEMBRO EXISTENTE
+        if new_rol in ("junta directiva", "miembro"):
+            if not df_miembros.empty:
+                st.markdown("---")
+                st.write(f"👤 Vincular a un Miembro existente:")
+                
+                # Creamos un diccionario para el selector: {Id_miembro: "Nombre - Grupo"}
+                lista_miembros = {
+                    row['Id_miembro']: f"{row['Nombre']} (DUI: {row['DUI']}) - {row['NombreGrupo']}"
+                    for index, row in df_miembros.iterrows()
+                }
+                
+                id_seleccionado = st.selectbox(
+                    "Seleccione la persona:", 
+                    options=lista_miembros.keys(),
+                    format_func=lambda x: lista_miembros[x]
+                )
+                
+                # Guardamos los IDs automáticamente
+                id_miembro_sel = id_seleccionado
+                # Buscamos el ID Grupo correspondiente a ese miembro
+                id_grupo_sel = df_miembros[df_miembros['Id_miembro'] == id_seleccionado]['Id_grupo'].values[0]
+                
+                st.caption(f"✅ Se asignará automáticamente al Grupo ID: {id_grupo_sel}")
+            else:
+                st.error("No hay miembros registrados en la tabla 'Miembro'. Registre miembros primero.")
+                st.form_submit_button("Detener")
+                return
 
-        if new_rol == 'promotora':
-            st.info("Escribe el **Nombre exacto** del distrito para asignar la promotora (Capital inicial).")
-            asignar_distrito_text = st.text_input("Nombre del Distrito (texto exacto)")
+        # CASO B: SI ES PROMOTORA -> VINCULAR A DISTRITO
+        elif new_rol == 'promotora':
+            if not df_distritos.empty:
+                st.markdown("---")
+                lista_distritos = {row['Id_distrito']: row['Nombre'] for i, row in df_distritos.iterrows()}
+                
+                id_dist_sel = st.selectbox(
+                    "Asignar Distrito:",
+                    options=lista_distritos.keys(),
+                    format_func=lambda x: lista_distritos[x]
+                )
+                id_distrito_sel = id_dist_sel
+            else:
+                st.warning("No se encontraron distritos registrados.")
 
+        # 3. BOTÓN DE GUARDADO
+        st.markdown("---")
         submitted = st.form_submit_button("Crear Usuario")
+
         if submitted:
             if not new_username or not new_password:
-                st.error("Usuario y contraseña obligatorios.")
+                st.error("Usuario y contraseña son obligatorios.")
                 return
 
-            con = obtener_conexion()
-            if not con:
-                st.error("No se pudo conectar a la base de datos.")
+            guardar_usuario_bd(new_username, new_password, new_rol, id_miembro_sel, id_grupo_sel, id_distrito_sel)
+
+# --- FUNCIÓN SQL PARA GUARDAR ---
+def guardar_usuario_bd(usuario, password, rol, id_miembro, id_grupo, id_distrito):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            
+            # Verificamos si el usuario ya existe
+            cursor.execute("SELECT Usuario FROM Login WHERE Usuario = %s", (usuario,))
+            if cursor.fetchone():
+                st.error(f"El usuario '{usuario}' ya existe. Elija otro.")
                 return
 
-            try:
-                # Detectar tabla de login
-                login_table = next((t for t in ["Login","login","Usuario","usuario"] if table_columns(con, t)), None)
-                if not login_table:
-                    st.error("No se encontró tabla de Login/Usuario en la BD.")
-                    return
-
-                cols = table_columns(con, login_table)
-                user_col = pick_column(cols, ["Usuario","usuario","user","User"])
-                pass_col = pick_column(cols, ["Contraseña","Contrasena","Contrasena_Hash","Password","password"])
-                rol_col = pick_column(cols, ["Rol","rol","Role"])
-                id_ref_col = pick_column(cols, ["Id_referencia","Id_referencia","id_referencia"]) 
-                id_grupo_col = pick_column(cols, ["Id_grupo","id_grupo"])
-                id_distr_col = pick_column(cols, ["Id_distrito","id_distrito"]) 
-
-                # Hash si la columna sugiere hash
-                to_store_pass = new_password
-                if pass_col and "hash" in (pass_col.lower() or ""):
-                    to_store_pass = hashlib.sha256(new_password.encode()).hexdigest()
-
-                # buscar id_grupo si el admin escribió nombre
-                id_grupo_val = None
-                if asignar_grupo_text:
-                    # buscar en tabla grupos
-                    grupo_table = next((t for t in ["grupos","Grupo","GrupoS","GRUPOS"] if table_columns(con, t)), None)
-                    if grupo_table:
-                        # buscar columna nombre
-                        gcols = table_columns(con, grupo_table)
-                        gname_col = pick_column(gcols, ["Nombre","nombre","Grupo","Descripcion","descripcion"]) 
-                        gid_col = pick_column(gcols, ["Id_grupo","id_grupo","Id_cliente","Id"]) 
-                        if gname_col and gid_col:
-                            cur = con.cursor()
-                            cur.execute(f"SELECT `{gid_col}` FROM `{grupo_table}` WHERE `{gname_col}` = %s LIMIT 1", (asignar_grupo_text,))
-                            r = cur.fetchone()
-                            cur.close()
-                            if r:
-                                id_grupo_val = r[0]
-                            else:
-                                st.error("No se encontró un grupo con ese nombre exacto.")
-                                return
-                        else:
-                            st.error("Estructura de tabla grupos no reconocida para búsqueda por nombre.")
-                            return
-                    else:
-                        st.error("No se encontró tabla de grupos en la BD.")
-                        return
-
-                # buscar id_distrito si el admin escribió nombre
-                id_distr_val = None
-                if asignar_distrito_text:
-                    distrito_table = next((t for t in ["Distrito","distrito","Distritos","distritos"] if table_columns(con, t)), None)
-                    if distrito_table:
-                        dcols = table_columns(con, distrito_table)
-                        dname_col = pick_column(dcols, ["Nombre","nombre","Descripcion","descripcion","Nombre_distrito"]) 
-                        did_col = pick_column(dcols, ["Id_distrito","id_distrito","Id"]) 
-                        if dname_col and did_col:
-                            cur = con.cursor()
-                            cur.execute(f"SELECT `{did_col}` FROM `{distrito_table}` WHERE `{dname_col}` = %s LIMIT 1", (asignar_distrito_text,))
-                            r = cur.fetchone()
-                            cur.close()
-                            if r:
-                                id_distr_val = r[0]
-                            else:
-                                st.error("No se encontró un distrito con ese nombre exacto.")
-                                return
-                        else:
-                            st.error("Estructura de tabla distrito no reconocida para búsqueda por nombre.")
-                            return
-                    else:
-                        st.error("No se encontró tabla de distrito en la BD.")
-                        return
-
-                # Construir INSERT dinámico
-                insert_cols = []
-                insert_vals = []
-                params = []
-
-                if user_col:
-                    insert_cols.append(user_col); insert_vals.append("%s"); params.append(new_username)
-                if pass_col:
-                    insert_cols.append(pass_col); insert_vals.append("%s"); params.append(to_store_pass)
-                if rol_col:
-                    insert_cols.append(rol_col); insert_vals.append("%s"); params.append(new_rol)
-                if id_ref_col:
-                    insert_cols.append(id_ref_col); insert_vals.append("%s"); params.append(None)
-                if id_grupo_col and id_grupo_val is not None:
-                    insert_cols.append(id_grupo_col); insert_vals.append("%s"); params.append(id_grupo_val)
-                if id_distr_col and id_distr_val is not None:
-                    insert_cols.append(id_distr_col); insert_vals.append("%s"); params.append(id_distr_val)
-
-                sql = f"INSERT INTO `{login_table}` ({', '.join('`'+c+'`' for c in insert_cols)}) VALUES ({', '.join(insert_vals)})"
-                cur = con.cursor()
-                cur.execute(sql, tuple(params))
-                con.commit()
-                st.success("Usuario creado correctamente en la BD.")
-                cur.close()
-                st.rerun()
-
-            except Exception as e:
-                con.rollback()
-                st.error(f"Error al insertar usuario: {e}")
-            finally:
-                con.close()
+            # Insertamos con todos los datos vinculados
+            # Asegúrate que tu tabla se llama 'Login' o 'Usuario'
+            query = """
+                INSERT INTO Login (Usuario, Contraseña, Rol, Id_miembro, Id_grupo, Id_distrito) 
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            # Pasamos None si no aplica (MySQL lo convierte a NULL)
+            valores = (usuario, password, rol, id_miembro, id_grupo, id_distrito)
+            
+            cursor.execute(query, valores)
+            conn.commit()
+            
+            st.success(f"✅ Usuario '{usuario}' creado exitosamente.")
+            if id_miembro:
+                st.info("🔗 Vinculado correctamente al perfil del miembro.")
+                
+        except Exception as e:
+            st.error(f"Error al guardar usuario: {e}")
+        finally:
+            conn.close()
 
 # -----------------------
 # CREAR CICLO (ya SIN vínculo a grupo)
