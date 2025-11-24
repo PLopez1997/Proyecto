@@ -386,66 +386,70 @@ def create_new_group(ref_data):
 # REPORTES: leer tabla caja si existe
 # -----------------------
 
-
 def show_reports():
-    st.header("📊 Reportes Consolidados")
+    st.header("📊 Reportes del Grupo y Caja Común")
     
     conn = obtener_conexion()
     if not conn:
-        st.error("No hay conexión con la base de datos.")
+        st.error("No hay conexión.")
         return
 
     try:
         grupo_id = st.session_state.get('grupo_id')
         
-        # 1. CONSULTA DIRECTA (Ya sabemos qué columnas existen)
-        # Traemos todos los movimientos de ESTE grupo ordenados por fecha
-        query = """
+        # --- PARTE A: DATOS GLOBALES (LA CAJA COMÚN) ---
+        # Calculamos el saldo de TODA la organización
+        query_global = "SELECT Tipo_transaccion, Monto FROM Caja"
+        df_global = pd.read_sql(query_global, conn)
+        
+        saldo_global = 0.0
+        if not df_global.empty:
+            ingresos_totales = df_global[df_global['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
+            egresos_totales = df_global[df_global['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
+            saldo_global = ingresos_totales - egresos_totales
+        
+        # --- PARTE B: DATOS LOCALES (SOLO DE ESTE GRUPO) ---
+        # Para el historial, solo mostramos lo que ESTE grupo ha aportado/gastado
+        query_local = """
             SELECT Fecha, Detalle, Tipo_transaccion, Monto 
             FROM Caja 
             WHERE Id_grupo = %s 
             ORDER BY Fecha DESC
         """
-        df = pd.read_sql(query, conn, params=(grupo_id,))
+        df_local = pd.read_sql(query_local, conn, params=(grupo_id,))
 
-        if not df.empty:
-            # --- SECCIÓN 1: TARJETAS DE INDICADORES (KPIs) ---
-            # Pandas hace el cálculo matemático rápido aquí
-            total_ingresos = df[df['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
-            total_egresos = df[df['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
-            saldo_actual = total_ingresos - total_egresos
+        # --- VISUALIZACIÓN ---
+        
+        # 1. KPI PRINCIPAL (GLOBAL)
+        st.info("ℹ️ Nota: El saldo mostrado pertenece a la Caja Común de todos los grupos.")
+        st.metric("💰 SALDO DISPONIBLE (Fondo Común)", f"${saldo_global:,.2f}")
+        
+        st.markdown("---")
 
-            # Mostramos los números grandes arriba
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Ingresos Históricos", f"${total_ingresos:,.2f}")
-            col2.metric("Total Egresos Históricos", f"${total_egresos:,.2f}")
-            col3.metric("💰 SALDO ACTUAL EN CAJA", f"${saldo_actual:,.2f}", delta="Disponible")
-
-            st.markdown("---")
-
-            # --- SECCIÓN 2: TABLA DETALLADA ---
-            st.subheader("📜 Libro Diario")
+        if not df_local.empty:
+            st.subheader("📜 Historial de Movimientos de MI GRUPO")
             
-            # Formateamos la fecha para quitar la hora si molesta
-            if 'Fecha' in df.columns:
-                df['Fecha'] = pd.to_datetime(df['Fecha']).dt.date
+            # Métricas locales (solo informativas)
+            local_ing = df_local[df_local['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
+            local_egr = df_local[df_local['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
             
-            # Coloreamos visualmente: Ingresos positivos, Egresos negativos (solo para gráfico/vista)
-            df['Flujo'] = df.apply(lambda x: x['Monto'] if x['Tipo_transaccion'] == 'Ingreso' else -x['Monto'], axis=1)
-            
-            # Mostramos la tabla limpia (sin la columna de cálculo 'Flujo')
-            st.dataframe(
-                df[['Fecha', 'Detalle', 'Tipo_transaccion', 'Monto']], 
-                use_container_width=True
-            )
+            c1, c2 = st.columns(2)
+            c1.metric("Aportes de este Grupo", f"${local_ing:,.2f}")
+            c2.metric("Retiros de este Grupo", f"${local_egr:,.2f}")
 
-            # --- SECCIÓN 3: GRÁFICO VISUAL ---
-            st.subheader("Tendencia de Movimientos")
-            st.bar_chart(df, x="Fecha", y="Flujo", color="Tipo_transaccion")
+            # Formato de fecha
+            if 'Fecha' in df_local.columns:
+                df_local['Fecha'] = pd.to_datetime(df_local['Fecha']).dt.date
+            
+            # Tabla
+            st.dataframe(df_local, use_container_width=True)
+
+            # Gráfico
+            st.caption("Tendencia de aportes y retiros de este grupo")
+            st.bar_chart(df_local, x="Fecha", y="Monto", color="Tipo_transaccion")
             
         else:
-            st.info("📂 No hay movimientos registrados en la caja de este grupo todavía.")
-            st.write("Vaya a la sección 'Caja y Préstamos' o 'Reuniones' para registrar transacciones.")
+            st.info("Este grupo aún no ha registrado movimientos en la caja común.")
 
     except Exception as e:
         st.error(f"Error cargando reportes: {e}")
