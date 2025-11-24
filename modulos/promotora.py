@@ -1,14 +1,20 @@
-# ==============================================================================
-# ARCHIVO: promotora.py
-# DESCRIPCIÓN: Panel principal de la Promotora.
-# ==============================================================================
 import streamlit as st
 import pandas as pd
-from datetime import date
-from connection import create_connection
+import sys
+import os
 
-# IMPORTAMOS EL ARCHIVO ANTERIOR para reutilizar la vista de detalles
-import distrito 
+# --- AGREGA ESTAS LÍNEAS AL PRINCIPIO ---
+# Esto agrega la carpeta anterior (la raíz del proyecto) a la ruta de búsqueda
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# ----------------------------------------
+
+# Ahora sí funcionará esta importación
+from connection import create_connection
+# Si distrito.py también está dentro de 'modulos', impórtalo así:
+import modulos.distrito as distrito 
+# (O si distrito.py está en la raíz, usa 'import distrito')
+
+# ... resto de tu código ... 
 
 # ------------------------------------------------------------------------------
 # FUNCIONES DE BASE DE DATOS ESPECÍFICAS PARA ESTE PANEL
