@@ -522,27 +522,22 @@ def show_admin_reports():
 def administrador_page():
     ref_data = fetch_referencia_data()
     st.title("Panel de Administración")
+    
+    # --- MENÚ LATERAL ---
     opciones = ["Gestión de Usuarios", "Grupos y Distritos", "Ciclos", "Reportes Consolidados"]
     seleccion = st.sidebar.selectbox("Sección", opciones)
+    
     st.sidebar.markdown("---")
-    if st.sidebar.button("Cerrar sesión"):
-        for k in ["sesion_iniciada","Usuario","tipo_usuario","rol"]:
-            if k in st.session_state: del st.session_state[k]
-        st.rerun()
-
+    
+    # --- RUTEO DE PÁGINAS ---
     if seleccion == "Gestión de Usuarios":
-        create_user_form(ref_data)
+        menu_gestion_usuarios()
+        
     elif seleccion == "Grupos y Distritos":
-        create_new_group(ref_data)
+        menu_grupos_distritos() # Placeholder
+        
     elif seleccion == "Ciclos":
-        create_cycle_form(ref_data)
+        menu_ciclos() # Placeholder
+        
     elif seleccion == "Reportes Consolidados":
         show_admin_reports()
-
-tab1, tab2 = st.tabs(["➕ Crear Usuario", "📋 Lista de Usuarios"])
-    
-    with tab1:
-        create_user_form()
-        
-    with tab2:
-        listar_usuarios()
