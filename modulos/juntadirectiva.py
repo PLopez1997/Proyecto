@@ -359,26 +359,54 @@ def obtener_lista_miembros_simple():
 
 def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
     conn = obtener_conexion()
+    
+    # --- CONFIGURACIÓN DE MULTAS AUTOMÁTICAS ---
+    MONTO_AUSENCIA = 1.00  # Costo por inasistencia
+    MONTO_EXCUSADO = 0.50  # Costo por excusa (si aplica)
+    
     if conn:
         try:
             cursor = conn.cursor()
             
-            # Preparamos la query de inserción
-            query = "INSERT INTO Asistencia (Id_reunion, Id_miembro, Estado) VALUES (%s, %s, %s)"
+            # 1. Insertar Asistencia (Id_reunion, Id_miembro)
+            query_asist = "INSERT INTO Asistencia (Id_reunion, Id_miembro, Estado) VALUES (%s, %s, %s)"
             
-            # Convertimos el diccionario en una lista de tuplas para insertar masivamente
-            valores = []
+            valores_asistencia = []
+            multas_automaticas = []
+            
             for id_miembro, estado in diccionario_asistencia.items():
-                valores.append((id_reunion, id_miembro, estado))
+                # Preparamos dato para tabla Asistencia
+                valores_asistencia.append((id_reunion, id_miembro, estado))
+                
+                # LÓGICA DE MULTA AUTOMÁTICA 
+                if estado == "Ausente":
+                    # (Id_miembro, Monto, Motivo, Estado)
+                    multas_automaticas.append((id_miembro, MONTO_AUSENCIA, "Inasistencia Automática", "Pendiente"))
+                    
+                elif estado == "Excusado":
+                    multas_automaticas.append((id_miembro, MONTO_EXCUSADO, "Ausencia Justificada", "Pendiente"))
             
-            # executemany es más eficiente para guardar varios registros a la vez
-            cursor.executemany(query, valores)
+            # Ejecutamos inserción masiva de asistencias
+            cursor.executemany(query_asist, valores_asistencia)
+            
+            # 2. Crear Multas Automáticas (si existen)
+            if multas_automaticas:
+                query_multa = "INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, %s)"
+                cursor.executemany(query_multa, multas_automaticas)
+            
             conn.commit()
             
-            st.toast("✅ Asistencia guardada correctamente.")
+            # Mensaje informativo
+            msg = "✅ Asistencia guardada."
+            if multas_automaticas:
+                msg += f" Se generaron {len(multas_automaticas)} multas automáticas."
+            st.toast(msg)
+            
         except Exception as e:
-            # Si intentas guardar asistencia dos veces para la misma reunión, podría dar error duplicate
-            st.error(f"Error al guardar asistencia (¿quizás ya la tomaste?): {e}")
+            if "1062" in str(e):
+                st.error("Error: Ya se tomó asistencia para esta reunión.")
+            else:
+                st.error(f"Error al guardar asistencia: {e}")
         finally:
             conn.close()
 
@@ -429,20 +457,21 @@ def gestionar_caja_prestamos():
     # --- PESTAÑA 2: REGISTRAR PAGO ---
     with tab2:
         st.subheader("Cobro de Cuotas")
+   
         prestamos = obtener_prestamos_activos()
         
+# ... dentro de with tab2: ...
         if prestamos:
-            # Ajuste: Id_prestamo
-            prestamo_sel = st.selectbox(
+                prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
                 format_func=lambda x: f"{x['Nombre_Miembro']} - ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
-            )
+                )
             
-            st.markdown("---")
-            c1, c2 = st.columns(2)
-            c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
-            c2.metric("Tasa Interés", f"{prestamo_sel['Tasa_interes']}%")
+                st.markdown("---")
+                c1, c2 = st.columns(2)
+                c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
+                c2.metric("Tasa Interés", f"{prestamo_sel['Interes']}%")
             
             with st.form("form_pago"):
                 col_cap, col_int = st.columns(2)
@@ -529,14 +558,14 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
             cursor = conn.cursor()
             grupo_id = st.session_state.get('grupo_id')
             
-            # CORRECCIÓN 1: Usamos 'Interes' en lugar de 'Tasa_interes'
+            # CORRECCIÓN: Usamos la columna 'Interes'
             query_prestamo = """
                 INSERT INTO Prestamo (Id_miembro, Monto, Interes, Plazo, Fecha_inicio, Estado) 
                 VALUES (%s, %s, %s, %s, %s, 'Activo')
             """
             cursor.execute(query_prestamo, (id_miembro, monto, tasa, plazo, fecha))
             
-            # Registro en CAJA (Salida de dinero)
+            # Registro en CAJA
             query_caja = """
                 INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle)
                 VALUES (%s, 'Egreso', %s, %s, %s)
@@ -550,7 +579,7 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
             st.error(f"Error al crear préstamo: {e}")
         finally:
             conn.close()
-
+            
 def obtener_prestamos_activos():
     conn = obtener_conexion()
     data = []
@@ -559,7 +588,9 @@ def obtener_prestamos_activos():
             cursor = conn.cursor(dictionary=True)
             grupo_id = st.session_state.get('grupo_id')
             
-            # CORRECCIÓN 2: Seleccionamos 'p.Interes'
+            # CORRECCIÓN: 
+            # 1. Usamos 'p.Interes' (según tu foto)
+            # 2. Nos aseguramos de traer Id_grupo para validar
             query = """
                 SELECT p.Id_prestamo, p.Monto, p.Interes, p.Fecha_inicio, 
                        m.Nombre as Nombre_Miembro, p.Id_miembro, m.Id_grupo
@@ -687,61 +718,10 @@ def ver_movimientos_caja():
             st.dataframe(df, use_container_width=True)
         finally:
             conn.close()
+#---------------------------------------------
+#PESTAÑA 4 REPORTE
+#---------------------------------------------
 
-#Asistencia
-
-def guardar_asistencia_bd(id_reunion, diccionario_asistencia):
-    conn = obtener_conexion()
-    
-    # --- CONFIGURACIÓN DE MULTAS AUTOMÁTICAS ---
-    MONTO_AUSENCIA = 1.00  # Costo por inasistencia
-    MONTO_EXCUSADO = 0.50  # Costo por excusa (si aplica)
-    
-    if conn:
-        try:
-            cursor = conn.cursor()
-            
-            # 1. Insertar Asistencia (Id_reunion, Id_miembro)
-            query_asist = "INSERT INTO Asistencia (Id_reunion, Id_miembro, Estado) VALUES (%s, %s, %s)"
-            
-            valores_asistencia = []
-            multas_automaticas = []
-            
-            for id_miembro, estado in diccionario_asistencia.items():
-                # Preparamos dato para tabla Asistencia
-                valores_asistencia.append((id_reunion, id_miembro, estado))
-                
-                # LÓGICA DE MULTA AUTOMÁTICA 
-                if estado == "Ausente":
-                    # (Id_miembro, Monto, Motivo, Estado)
-                    multas_automaticas.append((id_miembro, MONTO_AUSENCIA, "Inasistencia Automática", "Pendiente"))
-                    
-                elif estado == "Excusado":
-                    multas_automaticas.append((id_miembro, MONTO_EXCUSADO, "Ausencia Justificada", "Pendiente"))
-            
-            # Ejecutamos inserción masiva de asistencias
-            cursor.executemany(query_asist, valores_asistencia)
-            
-            # 2. Crear Multas Automáticas (si existen)
-            if multas_automaticas:
-                query_multa = "INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, %s)"
-                cursor.executemany(query_multa, multas_automaticas)
-            
-            conn.commit()
-            
-            # Mensaje informativo
-            msg = "✅ Asistencia guardada."
-            if multas_automaticas:
-                msg += f" Se generaron {len(multas_automaticas)} multas automáticas."
-            st.toast(msg)
-            
-        except Exception as e:
-            if "1062" in str(e):
-                st.error("Error: Ya se tomó asistencia para esta reunión.")
-            else:
-                st.error(f"Error al guardar asistencia: {e}")
-        finally:
-            conn.close()
 
 def show_reports():
     st.header("📊 Reportes Consolidados")
