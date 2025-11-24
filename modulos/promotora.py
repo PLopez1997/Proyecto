@@ -21,7 +21,7 @@ except ImportError as e:
 try:
     import distrito
 except ImportError:
-    from modulos import distrito
+    from modulos.distritos import distrito_page
 
 # Importamos el módulo vecino
 try:
