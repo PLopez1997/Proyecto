@@ -70,7 +70,8 @@ def login_page():
         
         if Rol == "promotora":
             st.info("📍 Verificación de Zona")
-            # El usuario pidió seleccionar entre 1, 2 o 3
+            # El usuario pidió seleccionar entre 1, 2 o 3 (o los distritos que existan)
+            # Nota: Idealmente esto vendría de BD, pero respetamos la lista fija solicitada
             distrito_seleccionado = st.selectbox(
                 "Seleccione el Número de Distrito asignado:",
                 options=[1, 2, 3],
@@ -85,6 +86,7 @@ def login_page():
             return
 
         # 1. Verificamos credenciales en la Base de Datos
+        # Ahora pasamos el Rol también para filtrar desde la consulta
         user_data = verificar_usuario(Usuario, Contraseña, Rol)
 
         if user_data:
@@ -112,19 +114,20 @@ def login_page():
             st.session_state['user_role'] = user_data['Rol']
             st.session_state['user_name'] = user_data['Usuario']
             
+            # --- IMPORTANTE: Variables críticas para que funcionen los otros módulos ---
+            st.session_state['Usuario'] = user_data['Usuario'] # Necesario para Modulo Miembro
+            st.session_state['user_id_miembro'] = user_data.get('Id_miembro') # Optimización
+            
             # Guardamos IDs importantes para el resto del sistema
             st.session_state['grupo_id'] = user_data.get('Id_grupo')
+            st.session_state['distrito_id'] = user_data.get('Id_distrito') # Estándar del sistema
             
-            # Guardamos el distrito validado para que promotora.py sepa qué mostrar
+            # Guardamos el distrito validado (variable específica de tu compañera)
             st.session_state['id_distrito_actual'] = user_data.get('Id_distrito')
             
             st.success(f"✅ Credenciales correctas. Bienvenido/a {user_data['Usuario']}.")
-            time.sleep(1) # Pequeña pausa para que el usuario lea el mensaje
-            st.rerun()    # Recarga la página para ir al menú principal
+            time.sleep(1) 
+            st.rerun()    
             
         else:
             st.error("❌ Error: Usuario, contraseña o rol incorrectos.")
-
-# Para probarlo localmente
-if __name__ == "__main__":
-    login_page()
