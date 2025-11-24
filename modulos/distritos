@@ -1,149 +1,248 @@
+# ==============================================================================
+# ARCHIVO: distrito.py
+# DESCRIPCIÓN: Entorno de visualización (solo lectura) para Promotoras.
+# Muestra datos filtrados en cascada: Distrito -> Grupo -> Miembro -> Finanzas.
+# ==============================================================================
+
 import streamlit as st
 import pandas as pd
-from modulos.config.conexion import obtener_conexion
-from .prestamos import vista_prestamos
+# Asegúrate de que esta importación sea correcta según tu estructura de archivos
+from connection import create_connection
 
+# ==============================================================================
+# SECCIÓN 1: FUNCIONES AUXILIARES DE CONSULTA SQL (BACKEND)
+# Estas funciones se encargan de traer los datos de la BD.
+# ==============================================================================
 
-def vista_distritos():
-    st.title("Gestión de Distritos y Grupos")
+def obtener_info_distrito(id_distrito):
+    """Obtiene los datos generales del distrito."""
+    conn = create_connection()
+    data = None
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            # Nombres de columnas basados en Imagen 1 (Distrito)
+            query = "SELECT * FROM Distrito WHERE id_distrito = %s"
+            cursor.execute(query, (id_distrito,))
+            data = cursor.fetchone()
+            cursor.close()
+            conn.close()
+        except Exception as e:
+             st.error(f"Error BD (Distrito): {e}")
+    return data
 
-    # ==========================================
-    # 1. Seleccionar número de distrito
-    # ==========================================
-    st.subheader("Seleccionar Distrito")
-
-    distrito_seleccionado = st.number_input(
-        "Ingrese el número de distrito (1, 2 o 3):",
-        min_value=1, max_value=3, step=1
-    )
-
-    # ==========================================
-    # 2. Mostrar grupos relacionados al distrito
-    # ==========================================
-    if distrito_seleccionado:
-        st.subheader(f"Grupos del Distrito {distrito_seleccionado}")
-
-        con = obtener_conexion()
-        cursor = con.cursor()
-
-        query_grupos = """
-            SELECT g.Id_grupo, g.Nombre, g.Fecha_inicio, g.Id_ciclo,
-                   g.Tasa_interes, g.Tipo_multa, g.Regla_interna
-            FROM grupos g
-            INNER JOIN distrito d ON d.Id_grupo = g.Id_grupo
-            WHERE d.Id_distrito = %s
-        """
-
-        cursor.execute(query_grupos, (distrito_seleccionado,))
-        data_grupos = cursor.fetchall()
-
-        columnas = [col[0] for col in cursor.description]
-        df = pd.DataFrame(data_grupos, columns=columnas)
-
-        st.dataframe(df, use_container_width=True)
-
-        # Guardar grupos encontrados para otras operaciones
-        lista_ids_grupo = df["Id_grupo"].tolist() if not df.empty else []
-
-        con.close()
-
-    st.divider()
-
-    # ==========================================
-    # 3. Agregar un grupo a un distrito
-    # ==========================================
-    st.subheader("Agregar un Grupo al Distrito")
-
-    nombre_nuevo_grupo = st.text_input(
-        "Nombre del nuevo grupo (Escribir con inicial mayúscula EXACTA)"
-    )
-
-    distrito_para_guardar = st.selectbox(
-        "Seleccione el Distrito al que pertenece este grupo:",
-        [1, 2, 3]
-    )
-
-    if st.button("Guardar Nuevo Grupo"):
-        if nombre_nuevo_grupo.strip() == "":
-            st.error("Debe ingresar un nombre válido para el grupo.")
-        else:
-            con = obtener_conexion()
-            cursor = con.cursor()
-
-            # 1. Insertar el grupo en la tabla grupos
-            insert_grupo = """
-                INSERT INTO grupos (Nombre, Fecha_inicio, Id_ciclo, Tasa_interes, Tipo_multa, Regla_interna)
-                VALUES (%s, NULL, NULL, NULL, NULL, NULL)
+def obtener_grupos_del_distrito_df(id_distrito):
+    """Devuelve un DataFrame con los grupos de UN distrito específico."""
+    conn = create_connection()
+    df = pd.DataFrame()
+    if conn:
+        try:
+            # Columnas basadas en Imagen 2 (Grupo), filtrando por FK id_distrito
+            query = """
+                SELECT id_grupo, nombre_grupo, ubicacion_grupo, fecha_creacion 
+                FROM Grupo 
+                WHERE id_distrito = %s
             """
-            cursor.execute(insert_grupo, (nombre_nuevo_grupo,))
-            con.commit()
+            df = pd.read_sql(query, conn, params=(id_distrito,))
+            conn.close()
+        except Exception as e:
+            st.error(f"Error BD (Grupos): {e}")
+    return df
 
-            # Recuperar el Id_grupo generado
-            cursor.execute("SELECT LAST_INSERT_ID()")
-            id_nuevo_grupo = cursor.fetchone()[0]
-
-            # 2. Insertar en la tabla distrito
-            insert_distrito = """
-                INSERT INTO distrito (Id_distrito, Id_grupo, Nombre)
-                VALUES (%s, %s, %s)
+def obtener_miembros_del_grupo_df(id_grupo):
+    """Devuelve un DataFrame con los miembros de UN grupo específico."""
+    conn = create_connection()
+    df = pd.DataFrame()
+    if conn:
+        try:
+            # Columnas basadas en Imagen 3 (Miembro), filtrando por FK id_grupo
+            # Concatenamos nombre y apellido para mostrarlo mejor en el selector
+            query = """
+                SELECT id_miembro, CONCAT(nombre_miembro, ' ', apellido_miembro) as nombre_completo, 
+                       direccion_miembro, telefono_miembro, dni_miembro, fecha_ingreso
+                FROM Miembro 
+                WHERE id_grupo = %s
             """
+            df = pd.read_sql(query, conn, params=(id_grupo,))
+            conn.close()
+        except Exception as e:
+            st.error(f"Error BD (Miembros): {e}")
+    return df
 
-            cursor.execute(insert_distrito, (
-                distrito_para_guardar,
-                id_nuevo_grupo,
-                nombre_nuevo_grupo
-            ))
+# --- Funciones para detalles financieros de un miembro ---
 
-            con.commit()
-            con.close()
+def obtener_prestamos_miembro(id_miembro):
+    # Basado en Imagen 4 (Prestamo)
+    sql = """SELECT id_prestamo, monto_prestamo, tasa_interes, plazo_meses, 
+             fecha_inicio, fecha_vencimiento, estado_prestamo 
+             FROM Prestamo WHERE id_miembro = %s"""
+    return _ejecutar_consulta_df(sql, id_miembro)
 
-            st.success("Grupo agregado correctamente al distrito.")
-            st.rerun()
+def obtener_ahorros_miembro(id_miembro):
+    # Basado en Imagen 5 (Ahorro)
+    sql = """SELECT id_ahorro, monto_ahorro, fecha_ahorro, tipo_ahorro 
+             FROM Ahorro WHERE id_miembro = %s"""
+    return _ejecutar_consulta_df(sql, id_miembro)
 
-    st.divider()
+def obtener_multas_miembro(id_miembro):
+    # Basado en Imagen 7 (Multa)
+    sql = """SELECT id_multa, monto_multa, fecha_multa, motivo_multa, estado_multa 
+             FROM Multa WHERE id_miembro = %s"""
+    return _ejecutar_consulta_df(sql, id_miembro)
 
-    # ==========================================
-    # 4. Mostrar miembros de un grupo
-    # ==========================================
-    st.subheader("Ver Miembros del Grupo")
+def obtener_pagos_miembro(id_miembro):
+    # Basado en Imagen 6 (Pago).
+    # ¡IMPORTANTE!: La tabla Pago no tiene id_miembro directo.
+    # Hay que hacer un JOIN con la tabla Prestamo para relacionarlos.
+    sql = """
+            SELECT P.id_pago, P.monto_pago, P.fecha_pago, Pr.id_prestamo, Pr.estado_prestamo
+            FROM Pago P
+            INNER JOIN Prestamo Pr ON P.id_prestamo = Pr.id_prestamo
+            WHERE Pr.id_miembro = %s
+          """
+    return _ejecutar_consulta_df(sql, id_miembro)
 
-    if distrito_seleccionado and lista_ids_grupo:
-        grupo_sel = st.selectbox(
-            "Seleccione un grupo:",
-            lista_ids_grupo
-        )
+def _ejecutar_consulta_df(query, parametro_id):
+    """Función genérica privada para ejecutar consultas y devolver DataFrames"""
+    conn = create_connection()
+    df = pd.DataFrame()
+    if conn:
+        try:
+            df = pd.read_sql(query, conn, params=(parametro_id,))
+            conn.close()
+        except Exception as e:
+            st.error(f"Error BD en consulta de detalles: {e}")
+    return df
 
-        if st.button("Mostrar miembros"):
-            con = obtener_conexion()
-            cursor = con.cursor()
 
-            query_miembros = """
-                SELECT Id_miembro, Id_grupo, Nombre, DUI, Direccion, Rol, Telefono
-                FROM miembro
-                WHERE Id_grupo = %s
-            """
+# ==============================================================================
+# SECCIÓN 2: INTERFAZ GRÁFICA (FRONTEND con Streamlit)
+# ==============================================================================
 
-            cursor.execute(query_miembros, (grupo_sel,))
-            miembros_data = cursor.fetchall()
+def app():
+    # -----------------------------------------------------------
+    # 1. Validación de Seguridad (Crucial)
+    # -----------------------------------------------------------
+    # Se asume que en el login (auth.py) guardaste el 'id_distrito' en session_state.
+    # Si no lo hiciste, esta pantalla no debe cargar.
+    if 'id_distrito_actual' not in st.session_state or st.session_state['id_distrito_actual'] is None:
+        st.error("⚠️ Acceso denegado. No se ha detectado un distrito asociado a su sesión. Por favor, inicie sesión nuevamente.")
+        st.stop() # Detiene la ejecución aquí.
 
-            columnas = [c[0] for c in cursor.description]
-            df_m = pd.DataFrame(miembros_data, columns=columnas)
+    id_distrito_sesion = st.session_state['id_distrito_actual']
 
-            st.subheader("Miembros del Grupo")
-            st.dataframe(df_m, use_container_width=True)
+    # -----------------------------------------------------------
+    # 2. Header e Información del Distrito
+    # -----------------------------------------------------------
+    info_distrito = obtener_info_distrito(id_distrito_sesion)
 
-            con.close()
+    st.title("🏡 Entorno de Promotora")
 
+    if info_distrito:
+        # Mostramos la info general del distrito en la parte superior
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Distrito", info_distrito['nombre_distrito'])
+        col2.metric("Ubicación", info_distrito['ubicacion_distrito'])
+        col3.metric("Coordinador", info_distrito['coordinador_distrito'])
+        st.divider()
     else:
-        st.info("Seleccione un distrito para cargar grupos.")
+        st.warning("No se pudo cargar la información detallada del distrito.")
 
-    st.divider()
+    st.subheader("Navegación de Grupos y Miembros")
+    st.info("Seleccione un grupo y luego un miembro para ver sus detalles financieros.")
 
-    # ==========================================
-    # 5. Mostrar archivo prestamos.py
-    # ==========================================
+    # -----------------------------------------------------------
+    # 3. Selector de GRUPOS (Nivel 1)
+    # -----------------------------------------------------------
+    # Obtenemos los grupos SOLO del distrito actual
+    df_grupos = obtener_grupos_del_distrito_df(id_distrito_sesion)
 
-    st.subheader("Gestión de Préstamos")
+    if df_grupos.empty:
+        st.warning(f"No hay grupos registrados en el distrito {info_distrito.get('nombre_distrito','actual')}.")
+        st.stop()
 
-    if st.button("Ir a préstamos"):
-        vista_prestamos()
+    # Creamos un diccionario para el selector: { "Nombre Grupo": id_grupo }
+    grupos_dict = dict(zip(df_grupos['nombre_grupo'], df_grupos['id_grupo']))
+
+    # Selectbox para elegir el grupo. Devuelve el Nombre, usamos el dict para sacar el ID
+    grupo_seleccionado_nombre = st.selectbox("📂 Paso 1: Seleccione un Grupo", options=grupos_dict.keys())
+    id_grupo_seleccionado = grupos_dict[grupo_seleccionado_nombre]
+
+    # Mostrar una vista rápida de la tabla de grupos (opcional, solo lectura)
+    with st.expander(f"Ver lista de todos los grupos en {grupo_seleccionado_nombre}"):
+         st.dataframe(df_grupos, hide_index=True, use_container_width=True)
+
+    # -----------------------------------------------------------
+    # 4. Selector de MIEMBROS (Nivel 2) - Depende del grupo seleccionado
+    # -----------------------------------------------------------
+    if id_grupo_seleccionado:
+        st.markdown("---")
+        # Obtenemos miembros SOLO del grupo seleccionado arriba
+        df_miembros = obtener_miembros_del_grupo_df(id_grupo_seleccionado)
+
+        if df_miembros.empty:
+             st.warning(f"El grupo '{grupo_seleccionado_nombre}' aún no tiene miembros registrados.")
+             st.stop()
+
+        # Creamos diccionario para el selector: { "Nombre Completo (DNI)": id_miembro }
+        # Añadimos el DNI al nombre para asegurar unicidad visual
+        lista_nombres_visual = df_miembros['nombre_completo'] + " (DNI: " + df_miembros['dni_miembro'] + ")"
+        miembros_dict = dict(zip(lista_nombres_visual, df_miembros['id_miembro']))
+
+        miembro_seleccionado_nombre = st.selectbox("👤 Paso 2: Seleccione un Miembro del grupo", options=miembros_dict.keys())
+        id_miembro_seleccionado = miembros_dict[miembro_seleccionado_nombre]
+
+
+        # -----------------------------------------------------------
+        # 5. Vista de Detalles Financieros (Nivel 3) - Depende del miembro
+        # -----------------------------------------------------------
+        if id_miembro_seleccionado:
+            st.markdown("---")
+            st.header(f"Detalles de: {miembro_seleccionado_nombre.split(' (')[0]}") # Limpiamos el nombre para el título
+
+            # Usamos pestañas para organizar las 4 tablas financieras
+            tab1, tab2, tab3, tab4 = st.tabs(["💰 Préstamos", "🐷 Ahorros", "🧾 Pagos Realizados", "⚠️ Multas"])
+
+            with tab1:
+                st.subheader("Historial de Préstamos")
+                df_prestamos = obtener_prestamos_miembro(id_miembro_seleccionado)
+                if df_prestamos.empty:
+                    st.info("Este miembro no tiene préstamos registrados.")
+                else:
+                    st.dataframe(df_prestamos, hide_index=True, use_container_width=True)
+
+            with tab2:
+                st.subheader("Historial de Ahorros")
+                df_ahorros = obtener_ahorros_miembro(id_miembro_seleccionado)
+                if df_ahorros.empty:
+                    st.info("Este miembro no tiene ahorros registrados.")
+                else:
+                    # Ejemplo de métrica rápida
+                    total_ahorrado = df_ahorros['monto_ahorro'].sum()
+                    st.metric("Total Ahorrado Acumulado", f"${total_ahorrado:,.2f}")
+                    st.dataframe(df_ahorros, hide_index=True, use_container_width=True)
+
+            with tab3:
+                st.subheader("Historial de Pagos")
+                df_pagos = obtener_pagos_miembro(id_miembro_seleccionado)
+                if df_pagos.empty:
+                    st.info("No hay registros de pagos para los préstamos de este miembro.")
+                else:
+                    st.dataframe(df_pagos, hide_index=True, use_container_width=True)
+
+            with tab4:
+                st.subheader("Multas y Sanciones")
+                df_multas = obtener_multas_miembro(id_miembro_seleccionado)
+                if df_multas.empty:
+                    st.success("¡Excelente! Este miembro no tiene multas registradas.")
+                else:
+                    st.dataframe(df_multas, hide_index=True, use_container_width=True)
+
+# Esta línea final es necesaria si ejecutas este archivo directamente para pruebas,
+# pero en tu app principal llamarás a distrito.app()
+if __name__ == "__main__":
+    # ESTO ES SOLO PARA PRUEBAS LOCALES SI EJECUTAS ESTE ARCHIVO SOLO
+    # Simula que una promotora del distrito con ID 1 inició sesión
+    st.session_state['id_distrito_actual'] = 1
+    st.set_page_config(layout="wide")
+    app()
