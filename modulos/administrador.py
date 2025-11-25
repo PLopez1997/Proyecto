@@ -83,7 +83,7 @@ def fetch_referencia_data():
                 label_col = pick_column(cols, ["Nombre", "nombre", "Descripcion", "descripcion", "Grupo"])
 
                 # --- NUEVO: Asignación de distrito al crear un grupo ---
-                st.subheader("➕ Crear nuevo grupo")
+                st.subheader("➕ Asignar grupo a distrito")
 
                 nuevo_nombre = st.text_input("Nombre del Grupo:")
                 nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
