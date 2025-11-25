@@ -283,7 +283,7 @@ def app():
         # Creamos el DataFrame formateado para que el gráfico sea claro
         # Nota: Usamos una estructura que Streamlit entiende bien (Categoría en eje X, Monto en eje Y)
         df_grafico = pd.DataFrame({
-            "Tipo": ["Capital Prestado (Egresos)", "Ahorros Totales (Ingresos)"],
+            "Tipo": ["Egresos", "Ingresos"],
             "Monto": [float(kpis['capital_total']), float(kpis['total_ahorros'])]
         })
         
