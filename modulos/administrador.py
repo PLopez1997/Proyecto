@@ -26,6 +26,7 @@ def pick_column(cols, candidates):
 # Lectura flexible (referencias)
 # -----------------------
 def fetch_referencia_data():
+    # --- CORRECCIÓN: SE ELIMINÓ LA INTERFAZ DE USUARIO DE AQUÍ ---
     conn = obtener_conexion()
     if not conn:
         st.warning("No hay conexión a BD; usando datos simulados.")
@@ -81,28 +82,6 @@ def fetch_referencia_data():
                 cols = table_columns(conn, grupo_table)
                 id_col = pick_column(cols, ["Id_grupo", "id_grupo", "Id_cliente", "Id", "Id_cliente"])
                 label_col = pick_column(cols, ["Nombre", "nombre", "Descripcion", "descripcion", "Grupo"])
-
-                # --- NUEVO: Asignación de distrito al crear un grupo ---
-                st.subheader("➕ Asignar grupo a distrito")
-
-                nuevo_nombre = st.text_input("Nombre del Grupo:")
-                nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
-
-                if st.button("Guardar Grupo"):
-                    if nuevo_nombre.strip() == "":
-                        st.error("Debe ingresar un nombre para el grupo.")
-                    else:
-                        try:
-                            cur = conn.cursor()
-                            insert_query = f"""
-                                INSERT INTO {grupo_table} (Nombre, Id_distrito)
-                                VALUES (%s, %s)
-                            """
-                            cur.execute(insert_query, (nuevo_nombre, nuevo_distrito))
-                            conn.commit()
-                            st.success("Grupo creado exitosamente.")
-                        except Exception as e:
-                            st.error(f"Error al guardar el grupo: {e}")
 
                 # ---- LECTURA NORMAL DE GRUPOS ----
                 if id_col and label_col:
@@ -163,7 +142,7 @@ def menu_gestion_usuarios():
     tab1, tab2 = st.tabs(["➕ Crear Usuario", "📋 Lista de Usuarios"])
 
     with tab1:
-        create_user_form()  # Llamada corregida (sin argumentos)
+        create_user_form() 
     with tab2:
         listar_usuarios()
 
@@ -411,6 +390,45 @@ def create_cycle_form(ref_data):
 # GESTIÓN DE GRUPOS (creación vinculada a tabla real)
 # -----------------------
 
+def asignar_distrito_a_grupo_existente():
+    """
+    Función que SOLO aparece en Grupos y Distritos para asignar
+    un distrito a un grupo existente mediante UPDATE.
+    """
+    st.markdown("---")
+    st.subheader("➕ Asignar grupo a distrito")
+    st.caption("Escriba el nombre exacto del grupo existente para vincularlo a un distrito.")
+
+    nuevo_nombre = st.text_input("Nombre del Grupo (existente):")
+    nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
+
+    if st.button("Guardar/Vincular Grupo"):
+        if nuevo_nombre.strip() == "":
+            st.error("Debe ingresar un nombre para buscar el grupo.")
+        else:
+            conn = obtener_conexion()
+            if conn:
+                try:
+                    cur = conn.cursor()
+                    # LÓGICA PEDIDA: BUSCAR NOMBRE -> UPDATE COLUMNA ID_DISTRITO
+                    update_query = """
+                        UPDATE Grupo 
+                        SET Id_distrito = %s 
+                        WHERE Nombre = %s
+                    """
+                    cur.execute(update_query, (nuevo_distrito, nuevo_nombre))
+                    
+                    if cur.rowcount > 0:
+                        conn.commit()
+                        st.success(f"✅ Se asignó el Distrito {nuevo_distrito} al grupo '{nuevo_nombre}'.")
+                    else:
+                        st.warning(f"No se encontró ningún grupo llamado '{nuevo_nombre}'. Verifique el nombre.")
+                        
+                except Exception as e:
+                    st.error(f"Error al actualizar el grupo: {e}")
+                finally:
+                    conn.close()
+
 def create_new_group(ref_data):
     st.subheader("➕ Crear Nuevo Grupo")
     grupos_df = ref_data["grupos"]
@@ -607,7 +625,10 @@ def administrador_page():
         menu_gestion_usuarios()
 
     elif seleccion == "Grupos y Distritos":
+        # AQUÍ LLAMAMOS A LAS DOS FUNCIONES DE GRUPO
         create_new_group(ref_data)
+        # ESTA ES LA FUNCIÓN NUEVA QUE SOLO APARECE AQUÍ:
+        asignar_distrito_a_grupo_existente()
 
     elif seleccion == "Ciclos":
         create_cycle_form(ref_data)
@@ -740,3 +761,5 @@ def listar_promotoras():
             st.error(f"Error al listar: {e}")
         finally:
             conn.close()
+
+       
