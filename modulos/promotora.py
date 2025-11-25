@@ -176,7 +176,7 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
             
             # 1. Buscar Miembros y sus Grupos en este distrito
             sql_miembro = """
-                SELECT m.Id_miembro, m.Nombre, m.Dni, m.Telefono, g.Nombre as NombreGrupo
+                SELECT m.Id_miembro, m.Nombre, m.DUI/Identificación, m.Telefono, g.Nombre as NombreGrupo
                 FROM Miembro m
                 JOIN Grupo g ON m.Id_grupo = g.Id_grupo
                 WHERE g.Id_distrito = %s AND m.Nombre LIKE %s
