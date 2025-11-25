@@ -739,4 +739,4 @@ def listar_promotoras():
         except Exception as e:
             st.error(f"Error al listar: {e}")
         finally:
-            conn.close()
+            conn.close()
