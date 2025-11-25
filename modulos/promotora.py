@@ -1,9 +1,10 @@
 # ==============================================================================
 # ARCHIVO: distrito.py
 # DESCRIPCIÓN: Entorno de Promotoras actualizado.
-# - Dashboard con KPIs financieros del distrito.
+# - Dashboard con KPIs financieros del distrito (Incluyendo Ahorros).
+# - Gráfico comparativo de Ingresos vs Egresos.
 # - Visualización de grupos del distrito.
-# - Gestión de Miembros (Buscador Global).
+# - Gestión de Miembros (Buscador Global con Ahorros).
 # ==============================================================================
 
 import streamlit as st
@@ -33,7 +34,6 @@ def obtener_info_distrito(id_distrito):
     if conn:
         try:
             cursor = conn.cursor(dictionary=True)
-            # Ajustamos la query para ser robustos
             cursor.execute("SELECT * FROM Distrito WHERE id_distrito = %s", (id_distrito,))
             data = cursor.fetchone()
             cursor.close()
@@ -50,17 +50,17 @@ def obtener_kpis_financieros(id_distrito):
     1. Total Prestamos Activos
     2. Cantidad de Multas Pendientes
     3. Capital Total Prestado (Suma de montos)
+    4. Monto Total en Ahorros (NUEVO)
     Todo filtrado por los grupos que pertenecen al id_distrito.
     """
     conn = obtener_conexion()
-    kpis = {"num_prestamos": 0, "num_multas": 0, "capital_total": 0.0}
+    kpis = {"num_prestamos": 0, "num_multas": 0, "capital_total": 0.0, "total_ahorros": 0.0}
     
     if conn:
         try:
             cursor = conn.cursor()
             
             # 1. Capital Total y Numero de Prestamos Activos
-            # Logica: Distrito -> Grupo -> Miembro -> Prestamo
             sql_prestamos = """
                 SELECT COUNT(p.Id_prestamo), SUM(p.Monto)
                 FROM Prestamo p
@@ -75,9 +75,6 @@ def obtener_kpis_financieros(id_distrito):
                 kpis["capital_total"] = res_prestamos[1] if res_prestamos[1] else 0.0
 
             # 2. Multas Pendientes
-            # Logica: Distrito -> Grupo -> Miembro -> Multa (o Prestamo->Multa)
-            # Asumimos que Multa esta ligada a Miembro directamente o via prestamo.
-            # Usaremos enlace directo a Miembro para abarcar mas casos.
             sql_multas = """
                 SELECT COUNT(mu.Id_multa)
                 FROM Multa mu
@@ -90,6 +87,20 @@ def obtener_kpis_financieros(id_distrito):
             if res_multas:
                 kpis["num_multas"] = res_multas[0] if res_multas[0] else 0
             
+            # 3. Monto Total en Ahorros (NUEVO KPI)
+            # Logica: Distrito -> Grupo -> Miembro -> Ahorro
+            sql_ahorros = """
+                SELECT SUM(a.Monto)
+                FROM Ahorro a
+                JOIN Miembro m ON a.Id_miembro = m.Id_miembro
+                JOIN Grupo g ON m.Id_grupo = g.Id_grupo
+                WHERE g.Id_distrito = %s
+            """
+            cursor.execute(sql_ahorros, (id_distrito,))
+            res_ahorros = cursor.fetchone()
+            if res_ahorros:
+                kpis["total_ahorros"] = res_ahorros[0] if res_ahorros[0] else 0.0
+            
             conn.close()
         except Exception as e:
             st.error(f"Error calculando KPIs: {e}")
@@ -101,8 +112,6 @@ def obtener_todos_prestamos_distrito(id_distrito):
     df = pd.DataFrame()
     if conn:
         try:
-            # NOTA: Quitamos 'Fecha_vencimiento' para evitar tu error anterior.
-            # Usamos 'Fecha_inicio' y 'Plazo' que son mas comunes.
             query = """
                 SELECT 
                     m.Nombre AS Miembro,
@@ -158,12 +167,12 @@ def obtener_grupos_distrito(id_distrito):
             pass
     return df
 
-# --- FUNCIÓN BUSCADOR DE MIEMBRO (Reemplazo de crear grupo) ---
+# --- FUNCIÓN BUSCADOR DE MIEMBRO ---
 
 def buscar_miembro_detalle(nombre_busqueda, id_distrito):
     """
     Busca un miembro por nombre (parcial) dentro del distrito.
-    Devuelve sus datos, su grupo, si tiene prestamos y si tiene multas.
+    Devuelve sus datos, su grupo, si tiene prestamos, multas y AHORROS.
     """
     conn = obtener_conexion()
     resultados = []
@@ -175,8 +184,9 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
             term = f"%{nombre_busqueda}%"
             
             # 1. Buscar Miembros y sus Grupos en este distrito
+            # Nota: Ajusta 'DUI/Identificación' al nombre real de tu columna si es diferente
             sql_miembro = """
-                SELECT m.Id_miembro, m.Nombre, m.DUI/Identificación, m.Telefono, g.Nombre as NombreGrupo
+                SELECT m.Id_miembro, m.Nombre, m.Telefono, g.Nombre as NombreGrupo
                 FROM Miembro m
                 JOIN Grupo g ON m.Id_grupo = g.Id_grupo
                 WHERE g.Id_distrito = %s AND m.Nombre LIKE %s
@@ -193,18 +203,26 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
                 info_prestamos = ", ".join([f"${p['Monto']} ({p['Estado']})" for p in prestamos]) if prestamos else "Sin préstamos"
                 
                 # 3. Buscar Multas
-                # Intentamos buscar por Id_miembro directo, o via prestamo si fuera necesario.
-                # Aqui asumimos enlace directo Miembro->Multa para simplificar
                 cursor.execute("SELECT Monto, Estado FROM Multa WHERE Id_miembro = %s", (id_m,))
                 multas = cursor.fetchall()
                 info_multas = ", ".join([f"${mu['Monto']} ({mu['Estado']})" for mu in multas]) if multas else "Sin multas"
                 
+                # 4. Buscar Ahorros (NUEVO)
+                # Buscamos en tabla Ahorro con el Id_miembro
+                cursor.execute("SELECT Monto FROM Ahorro WHERE Id_miembro = %s", (id_m,))
+                ahorros = cursor.fetchall()
+                # Sumar o listar. Aquí listamos los montos individuales como se pidió mostrar "los ahorros".
+                info_ahorros = ", ".join([f"${a['Monto']}" for a in ahorros]) if ahorros else "Sin ahorros"
+                # Opcional: Si prefieres la suma total:
+                # total_ahorro_miembro = sum([a['Monto'] for a in ahorros])
+                # info_ahorros = f"${total_ahorro_miembro:,.2f}"
+
                 resultados.append({
                     "Nombre": m['Nombre'],
-                    "DUI": m['DUI/Identificación'],
                     "Grupo": m['NombreGrupo'],
                     "Prestamos": info_prestamos,
-                    "Multas": info_multas
+                    "Multas": info_multas,
+                    "Ahorros": info_ahorros  # Columna nueva
                 })
                 
             cursor.close()
@@ -245,10 +263,26 @@ def app():
         # A) KPIs (Tarjetas)
         kpis = obtener_kpis_financieros(id_distrito)
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("💰 Capital Total Prestado", f"${kpis['capital_total']:,.2f}")
-        c2.metric("📈 Préstamos Activos", kpis['num_prestamos'])
-        c3.metric("⚠️ Multas Pendientes", kpis['num_multas'], delta_color="inverse")
+        # Agregamos una columna más para el nuevo KPI de Ahorros
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("💰 Capital Prestado (Egresos)", f"${kpis['capital_total']:,.2f}")
+        c2.metric("🐷 Ahorros Totales (Ingresos)", f"${kpis['total_ahorros']:,.2f}", delta_color="normal")
+        c3.metric("📈 Préstamos Activos", kpis['num_prestamos'])
+        c4.metric("⚠️ Multas Pendientes", kpis['num_multas'], delta_color="inverse")
+        
+        st.divider()
+
+        # --- NUEVO GRÁFICO DE BARRAS ---
+        st.subheader("📊 Ingresos y Egresos totales")
+        
+        # Creamos el DataFrame para el gráfico
+        datos_grafico = pd.DataFrame({
+            "Categoría": ["Capital Prestado (Egresos)", "Ahorros (Ingresos)"],
+            "Monto": [kpis['capital_total'], kpis['total_ahorros']]
+        })
+        
+        # Mostramos el gráfico de barras
+        st.bar_chart(datos_grafico.set_index("Categoría"), color=["#FF4B4B", "#00CC96"]) # Rojo para prestamos, Verde para ahorros (aprox)
         
         st.divider()
         
@@ -290,10 +324,9 @@ def app():
         st.markdown("---")
         
         # B) GESTIÓN DE MIEMBROS (Buscador Inteligente)
-        # Reemplaza la sección de "Agregar Grupo"
         
         st.subheader("🔍 Gestión y Búsqueda de Miembros")
-        st.caption("Busque un miembro para ver su Grupo, Préstamos y Estado actual.")
+        st.caption("Busque un miembro para ver su Grupo, Préstamos, Multas y Ahorros.")
         
         busqueda = st.text_input("Escriba el nombre del miembro:", placeholder="Ej: Maria Perez...")
         
