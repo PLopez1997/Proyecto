@@ -162,7 +162,7 @@ def create_user_form():
     try:
         # Cargar Miembros con sus Grupos
         query_miembros = """
-            SELECT m.Id_miembro, m.Nombre, m.DUI/Identificación as DUI, m.Id_grupo, g.Nombre as NombreGrupo
+            SELECT m.Id_miembro, m.Nombre, m.`DUI/Identificación` as DUI, m.Id_grupo, g.Nombre as NombreGrupo
             FROM Miembro m
             JOIN Grupo g ON m.Id_grupo = g.Id_grupo
         """
