@@ -201,7 +201,7 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
                 
                 resultados.append({
                     "Nombre": m['Nombre'],
-                    "DNI": m['Dni'],
+                    "DUI": m['DUI/Identificación'],
                     "Grupo": m['NombreGrupo'],
                     "Prestamos": info_prestamos,
                     "Multas": info_multas
