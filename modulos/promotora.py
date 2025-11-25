@@ -89,17 +89,22 @@ def obtener_kpis_financieros(id_distrito):
             
             # 3. Monto Total en Ahorros (NUEVO KPI)
             # Logica: Distrito -> Grupo -> Miembro -> Ahorro
-            sql_ahorros = """
-                SELECT SUM(a.Monto)
-                FROM Ahorro a
-                JOIN Miembro m ON a.Id_miembro = m.Id_miembro
-                JOIN Grupo g ON m.Id_grupo = g.Id_grupo
-                WHERE g.Id_distrito = %s
-            """
-            cursor.execute(sql_ahorros, (id_distrito,))
-            res_ahorros = cursor.fetchone()
-            if res_ahorros:
-                kpis["total_ahorros"] = res_ahorros[0] if res_ahorros[0] else 0.0
+            # Usamos un try interno por si la tabla Ahorro aun no tiene datos o estructura
+            try:
+                sql_ahorros = """
+                    SELECT SUM(a.Monto)
+                    FROM Ahorro a
+                    JOIN Miembro m ON a.Id_miembro = m.Id_miembro
+                    JOIN Grupo g ON m.Id_grupo = g.Id_grupo
+                    WHERE g.Id_distrito = %s
+                """
+                cursor.execute(sql_ahorros, (id_distrito,))
+                res_ahorros = cursor.fetchone()
+                if res_ahorros:
+                    kpis["total_ahorros"] = res_ahorros[0] if res_ahorros[0] else 0.0
+            except Exception as e_ahorro:
+                print(f"Advertencia: No se pudieron sumar ahorros ({e_ahorro})")
+                kpis["total_ahorros"] = 0.0
             
             conn.close()
         except Exception as e:
@@ -184,7 +189,7 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
             term = f"%{nombre_busqueda}%"
             
             # 1. Buscar Miembros y sus Grupos en este distrito
-            # Nota: Ajusta 'DUI/Identificación' al nombre real de tu columna si es diferente
+            # Ajuste de robustez: Buscamos columnas basicas
             sql_miembro = """
                 SELECT m.Id_miembro, m.Nombre, m.Telefono, g.Nombre as NombreGrupo
                 FROM Miembro m
@@ -208,21 +213,21 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
                 info_multas = ", ".join([f"${mu['Monto']} ({mu['Estado']})" for mu in multas]) if multas else "Sin multas"
                 
                 # 4. Buscar Ahorros (NUEVO)
-                # Buscamos en tabla Ahorro con el Id_miembro
                 cursor.execute("SELECT Monto FROM Ahorro WHERE Id_miembro = %s", (id_m,))
                 ahorros = cursor.fetchall()
-                # Sumar o listar. Aquí listamos los montos individuales como se pidió mostrar "los ahorros".
+                # Mostramos los montos individuales
                 info_ahorros = ", ".join([f"${a['Monto']}" for a in ahorros]) if ahorros else "Sin ahorros"
-                # Opcional: Si prefieres la suma total:
-                # total_ahorro_miembro = sum([a['Monto'] for a in ahorros])
-                # info_ahorros = f"${total_ahorro_miembro:,.2f}"
+                
+                # Opcional: Calcular total ahorrado por este miembro
+                total_ahorrado = sum([float(a['Monto']) for a in ahorros])
 
                 resultados.append({
                     "Nombre": m['Nombre'],
                     "Grupo": m['NombreGrupo'],
                     "Prestamos": info_prestamos,
                     "Multas": info_multas,
-                    "Ahorros": info_ahorros  # Columna nueva
+                    "Ahorros": info_ahorros,
+                    "Total Ahorrado": f"${total_ahorrado:.2f}"
                 })
                 
             cursor.close()
@@ -265,24 +270,34 @@ def app():
         
         # Agregamos una columna más para el nuevo KPI de Ahorros
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 Capital Prestado (Egresos)", f"${kpis['capital_total']:,.2f}")
-        c2.metric("🐷 Ahorros Totales (Ingresos)", f"${kpis['total_ahorros']:,.2f}", delta_color="normal")
+        c1.metric("💰 Capital Prestado", f"${kpis['capital_total']:,.2f}", help="Dinero que ha salido de caja en préstamos")
+        c2.metric("🐷 Ahorros Totales", f"${kpis['total_ahorros']:,.2f}", delta_color="normal", help="Dinero ingresado por ahorros de miembros")
         c3.metric("📈 Préstamos Activos", kpis['num_prestamos'])
         c4.metric("⚠️ Multas Pendientes", kpis['num_multas'], delta_color="inverse")
         
         st.divider()
 
-        # --- NUEVO GRÁFICO DE BARRAS ---
+        # --- NUEVO GRÁFICO DE BARRAS (INGRESOS vs EGRESOS) ---
         st.subheader("📊 Ingresos y Egresos totales")
         
-        # Creamos el DataFrame para el gráfico
-        datos_grafico = pd.DataFrame({
-            "Categoría": ["Capital Prestado (Egresos)", "Ahorros (Ingresos)"],
-            "Monto": [kpis['capital_total'], kpis['total_ahorros']]
+        # Creamos el DataFrame formateado para que el gráfico sea claro
+        # Nota: Usamos una estructura que Streamlit entiende bien (Categoría en eje X, Monto en eje Y)
+        df_grafico = pd.DataFrame({
+            "Tipo": ["Capital Prestado (Egresos)", "Ahorros Totales (Ingresos)"],
+            "Monto": [float(kpis['capital_total']), float(kpis['total_ahorros'])]
         })
         
-        # Mostramos el gráfico de barras
-        st.bar_chart(datos_grafico.set_index("Categoría"), color=["#FF4B4B", "#00CC96"]) # Rojo para prestamos, Verde para ahorros (aprox)
+        # Renderizamos el gráfico usando la columna 'Tipo' para el color también
+        try:
+            st.bar_chart(
+                df_grafico,
+                x="Tipo",
+                y="Monto",
+                color="Tipo"  # Esto asigna un color distinto a cada barra automáticamente
+            )
+        except Exception:
+            # Fallback para versiones antiguas de Streamlit
+            st.bar_chart(df_grafico.set_index("Tipo"))
         
         st.divider()
         
