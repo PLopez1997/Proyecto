@@ -159,12 +159,12 @@ def gestionar_reuniones():
 def gestionar_caja_prestamos():
     st.header("💰 Gestión Financiera: Caja y Créditos")
     
-    # Calculamos saldo con manejo de error para que no bloquee la página
+    # 1. Cálculo de Saldo Robusto
     try:
         saldo_actual = calcular_saldo_disponible()
         st.metric(label="💵 EFECTIVO DISPONIBLE EN CAJA (GLOBAL)", value=f"${saldo_actual:,.2f}")
     except Exception as e:
-        st.error(f"Error calculando saldo (Verifique BD): {e}")
+        st.error(f"Error calculando saldo: {e}")
         saldo_actual = 0.0
     
     tab1, tab2, tab3, tab4 = st.tabs(["➕ Nuevo Préstamo", "📥 Registrar Pago", "⚠️ Multas", "📜 Movimientos de Caja"])
@@ -174,12 +174,10 @@ def gestionar_caja_prestamos():
         st.subheader("Otorgar Nuevo Préstamo")
         with st.form("form_prestamo"):
             col1, col2 = st.columns(2)
-            
-            # Cargamos miembros
             miembros = obtener_lista_miembros_simple()
+            
             if miembros:
                 dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
-                
                 with col1:
                     id_miembro = st.selectbox("Solicitante", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
                     monto = st.number_input("Monto Solicitado ($)", min_value=0.0, step=5.0)
@@ -194,15 +192,15 @@ def gestionar_caja_prestamos():
 
                 if st.form_submit_button("Aprobar y Desembolsar"):
                     if monto > saldo_actual:
-                        st.error(f"⛔ Fondos insuficientes (${saldo_actual}).")
+                        st.error(f"⛔ Fondos insuficientes (${saldo_actual:,.2f}).")
                     elif monto <= 0:
                         st.error("El monto debe ser positivo.")
                     else:
                         crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha_inicio)
             else:
-                st.warning("No hay miembros registrados para dar préstamos.")
+                st.warning("No hay miembros registrados.")
 
-    # --- PESTAÑA 2: REGISTRAR PAGO ---
+    # --- PESTAÑA 2: REGISTRAR PAGO (LIQUIDACIÓN AUTOMÁTICA) ---
     with tab2:
         st.subheader("Cobro de Cuotas")
         prestamos = obtener_prestamos_activos()
@@ -211,49 +209,50 @@ def gestionar_caja_prestamos():
             prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
-                format_func=lambda x: f"{x['Nombre_Miembro']} - ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
+                format_func=lambda x: f"{x['Nombre_Miembro']} - Saldo Orig: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
             )
             
             st.markdown("---")
             c1, c2 = st.columns(2)
             c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
-            # Ajuste visual para coincidir con BD 'Interes'
             c2.metric("Tasa Interés", f"{prestamo_sel['Interes']}%")
             
             with st.form("form_pago"):
-                col_cap, col_int = st.columns(2)
-                with col_cap:
-                    abono_capital = st.number_input("Abono a Capital ($)", min_value=0.0)
-                with col_int:
-                    pago_interes = st.number_input("Pago de Interés ($)", min_value=0.0)
-                
+                c1, c2 = st.columns(2)
+                abono_capital = c1.number_input("Abono a Capital ($)", min_value=0.0)
+                pago_interes = c2.number_input("Pago de Interés ($)", min_value=0.0)
                 fecha_pago = st.date_input("Fecha de pago")
                 
                 if st.form_submit_button("Registrar Pago"):
-                    registrar_pago_bd(prestamo_sel['Id_prestamo'], abono_capital, pago_interes, fecha_pago, prestamo_sel['Id_grupo'])
+                    # Pasamos el monto original para verificar si liquida
+                    registrar_pago_bd(
+                        prestamo_sel['Id_prestamo'], 
+                        abono_capital, 
+                        pago_interes, 
+                        fecha_pago, 
+                        prestamo_sel['Id_grupo'],
+                        prestamo_sel['Monto'] # Monto original para comparar
+                    )
         else:
             st.info("No hay préstamos activos.")
 
     # --- PESTAÑA 3: MULTAS ---
     with tab3:
         st.subheader("Gestión de Multas")
-        col_m1, col_m2 = st.columns(2)
-        
-        with col_m1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.markdown("#### 😡 Multa Manual")
             with st.form("form_multa_manual"):
                 if miembros:
-                    miembro_m = st.selectbox("Miembro", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x], key="sel_mul")
+                    m_sel = st.selectbox("Miembro", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x], key="sel_mul")
                     monto_m = st.number_input("Monto ($)", min_value=0.50, step=0.25)
                     motivo_m = st.text_input("Motivo", "Mora / Otros")
-                    
                     if st.form_submit_button("Aplicar Multa"):
-                        aplicar_multa_bd(miembro_m, monto_m, motivo_m)
+                        aplicar_multa_bd(m_sel, monto_m, motivo_m)
                 else:
                     st.warning("Sin miembros.")
-
-        with col_m2:
-            st.markdown("#### 📋 Pendientes de Pago")
+        with c2:
+            st.markdown("#### 📋 Pendientes")
             listar_multas_pendientes()
 
     # --- PESTAÑA 4: CAJA ---
