@@ -223,21 +223,23 @@ def gestionar_caja_prestamos():
         else:
             st.info("✅ No hay préstamos pendientes de cobro.")
 
- # --- PESTAÑA 3: MULTAS ---
+   # --- MULTAS (MEJORADO) ---
     with tab3:
         st.subheader("Gestión de Multas")
         c1, c2 = st.columns(2)
-        
-        # Columna Izquierda: Crear Multa Manual (Lo que habías borrado)
         with c1:
             st.markdown("#### 😡 Multa Manual")
-…                            st.error("El motivo es obligatorio.")
-                else:
-                    st.warning("No hay miembros registrados para multar.")
-
-        # Columna Derecha: Ver y Pagar Multas Pendientes
+            with st.form("form_multa"):
+                if miembros:
+                    dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
+                    m_sel = st.selectbox("Miembro", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
+                    monto_m = st.number_input("Monto ($)", min_value=0.50)
+                    motivo_m = st.text_input("Motivo")
+                    if st.form_submit_button("Aplicar"):
+                        aplicar_multa_bd(m_sel, monto_m, motivo_m)
         with c2:
-            st.markdown("#### 📋 Pendientes de Pago")
+            st.markdown("#### 📋 Pendientes")
+            # Llamamos a la función actualizada que incluye el botón de pago
             listar_multas_pendientes()
 
 
