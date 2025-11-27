@@ -1,6 +1,6 @@
 # ==============================================================================
 # ARCHIVO: distrito.py
-# DESCRIPCIÓN: Entorno de Promotoras actualizado y corregido.
+# DESCRIPCIÓN: Entorno de Promotoras actualizado.
 # ==============================================================================
 
 import streamlit as st
@@ -32,7 +32,6 @@ def obtener_info_distrito(id_distrito):
     if conn:
         try:
             cursor = conn.cursor(dictionary=True)
-            # Asumimos que la tabla se llama Distrito y tiene id_distrito o Id_distrito
             cursor.execute("SELECT * FROM Distrito WHERE id_distrito = %s", (id_distrito,))
             data = cursor.fetchone()
         except Exception:
@@ -198,8 +197,6 @@ def buscar_miembro_detalle(nombre_busqueda, id_distrito):
 def crear_grupo_bd(nombre, fecha, id_ciclo, tasa, tipo_multa, regla, id_distrito):
     """
     Crea un grupo insertando explícitamente en las columnas definidas en el Excel.
-    Nota: Usamos `Regla interna` con backticks si la BD respeta el espacio del CSV, 
-    o Regla_interna si fue normalizada. Usaremos backticks por seguridad con MySQL.
     """
     conn = obtener_conexion_safe()
     if conn:
@@ -276,8 +273,13 @@ def app():
     st.title(f"🏡 Panel del {nombre_distrito}")
     st.markdown("---")
 
-    # 3. PESTAÑAS
-    tab_dashboard, tab_gestion, tab_grupos = st.tabs(["📊 Dashboard Financiero", "🔍 Miembros", "📂 Gestión de Grupos"])
+    # 3. PESTAÑAS (Ahora son 4 para mayor claridad)
+    tab_dashboard, tab_gestion, tab_grupos, tab_crear = st.tabs([
+        "📊 Dashboard Financiero", 
+        "🔍 Miembros", 
+        "📂 Grupos del Distrito", 
+        "➕ Crear Nuevo Grupo"
+    ])
 
     # -----------------------------------------------------------
     # TAB 1: DASHBOARD
@@ -339,22 +341,18 @@ def app():
                 st.caption("Ingrese al menos 3 caracteres.")
 
     # -----------------------------------------------------------
-    # TAB 3: GESTIÓN DE GRUPOS (Crear / Asignar)
+    # TAB 3: LISTADO Y VINCULACIÓN DE GRUPOS
     # -----------------------------------------------------------
     with tab_grupos:
-        col_left, col_right = st.columns(2)
-        
-        # --- LISTA DE GRUPOS ACTUALES ---
-        with col_left:
-            st.subheader(f"📂 Grupos en {nombre_distrito}")
-            df_grupos = obtener_grupos_distrito(id_distrito)
-            if not df_grupos.empty:
-                st.dataframe(df_grupos, use_container_width=True)
-            else:
-                st.info("No hay grupos asignados a este distrito.")
-                
-            st.markdown("---")
-            st.markdown("#### 🔗 Vincular Grupo Existente")
+        st.subheader(f"📂 Grupos en {nombre_distrito}")
+        df_grupos = obtener_grupos_distrito(id_distrito)
+        if not df_grupos.empty:
+            st.dataframe(df_grupos, use_container_width=True)
+        else:
+            st.info("No hay grupos asignados a este distrito.")
+            
+        st.markdown("---")
+        with st.expander("🔗 Vincular Grupo Existente (Avanzado)"):
             st.caption("Si un grupo ya existe pero no tiene distrito, asígnelo aquí.")
             with st.form("form_vincular"):
                 nombre_existente = st.text_input("Nombre exacto del grupo:")
@@ -364,14 +362,18 @@ def app():
                     else:
                         st.error("Escriba el nombre.")
 
-        # --- CREAR NUEVO GRUPO ---
-        with col_right:
-            st.subheader("➕ Crear Nuevo Grupo")
-            st.caption("El grupo se creará vinculado automáticamente a este distrito.")
-            
-            ciclos = obtener_ciclos_disponibles()
-            
-            with st.form("form_crear_grupo"):
+    # -----------------------------------------------------------
+    # TAB 4: CREAR NUEVO GRUPO (Ahora en su propia pestaña)
+    # -----------------------------------------------------------
+    with tab_crear:
+        st.subheader("➕ Crear Nuevo Grupo")
+        st.info(f"El grupo que cree aquí se asignará automáticamente al **{nombre_distrito}**.")
+        
+        ciclos = obtener_ciclos_disponibles()
+        
+        with st.form("form_crear_grupo"):
+            c1, c2 = st.columns(2)
+            with c1:
                 nombre_nuevo = st.text_input("Nombre del Grupo")
                 fecha_inicio = st.date_input("Fecha de Inicio")
                 
@@ -381,18 +383,19 @@ def app():
                     opciones_ciclo = {c['Id_ciclo']: f"Ciclo {c['Id_ciclo']} ({c.get('Duracion', '')})" for c in ciclos}
                     id_ciclo_sel = st.selectbox("Ciclo", options=opciones_ciclo.keys(), format_func=lambda x: opciones_ciclo[x])
                 else:
-                    st.warning("No hay ciclos registrados en BD. Se usará valor 1 por defecto.")
+                    # st.warning("No hay ciclos registrados en BD. Se usará valor 1 por defecto.")
                     id_ciclo_sel = 1 # Fallback
-                
+            
+            with c2:
                 tasa = st.number_input("Tasa de Interés (%)", min_value=0.0, value=5.0, step=0.1)
                 tipo_multa = st.text_input("Tipo de Multa (Ej: Fija, %)", value="Fija")
-                regla = st.text_area("Reglas Internas", placeholder="Describa las reglas...")
-                
-                if st.form_submit_button("Crear Grupo"):
-                    if nombre_nuevo:
-                        crear_grupo_bd(nombre_nuevo, fecha_inicio, id_ciclo_sel, tasa, tipo_multa, regla, id_distrito)
-                    else:
-                        st.error("El nombre es obligatorio.")
+                regla = st.text_area("Reglas Internas", placeholder="Describa brevemente...")
+            
+            if st.form_submit_button("Crear Grupo", type="primary"):
+                if nombre_nuevo:
+                    crear_grupo_bd(nombre_nuevo, fecha_inicio, id_ciclo_sel, tasa, tipo_multa, regla, id_distrito)
+                else:
+                    st.error("El nombre del grupo es obligatorio.")
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="Distrito")
