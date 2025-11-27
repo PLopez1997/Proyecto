@@ -198,6 +198,7 @@ def gestionar_caja_prestamos():
             )
             
             # --- CÁLCULO DE SALDO PENDIENTE ---
+            # Aquí llamamos a la función que ahora SÍ está incluida abajo
             amortizado = obtener_amortizado_prestamo(prestamo_sel['Id_prestamo'])
             deuda_original = float(prestamo_sel['Monto'])
             saldo_pendiente_capital = deuda_original - amortizado
