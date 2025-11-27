@@ -233,7 +233,7 @@ def gestionar_caja_prestamos():
                     )
         else:
             st.info("No hay préstamos activos.")
-            
+
     # --- PESTAÑA 3: MULTAS ---
     with tab3:
         st.subheader("Gestión de Multas")
@@ -520,6 +520,22 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
         finally:
             conn.close()
 
+# --- FUNCION AGREGADA QUE FALTABA ---
+def obtener_amortizado_prestamo(id_prestamo):
+    conn = obtener_conexion_safe()
+    pagado = 0.0
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Sumamos solo Capital (Pagos con S)
+            cursor.execute("SELECT SUM(Monto_capital) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
+            res = cursor.fetchone()
+            if res and res[0]:
+                pagado = float(res[0])
+        except: pass
+        finally: conn.close()
+    return pagado
+
 def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_original):
     """Registra el pago y liquida el préstamo si se completa el capital"""
     conn = obtener_conexion_safe()
@@ -527,7 +543,7 @@ def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_orig
         try:
             cursor = conn.cursor()
             
-            # 1. Registrar Pago
+            # 1. Registrar Pago (Tabla Pagos con S)
             q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha) VALUES (%s, %s, %s, %s)"
             cursor.execute(q_p, (id_prestamo, capital, interes, fecha))
             
@@ -541,6 +557,7 @@ def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_orig
             res = cursor.fetchone()
             total_abonado = float(res[0]) if res and res[0] else 0.0
             
+            # Margen de error pequeño para decimales
             if total_abonado >= (float(monto_original) - 0.1):
                 cursor.execute("UPDATE Prestamo SET Estado = 'Pagado' WHERE Id_prestamo = %s", (id_prestamo,))
                 st.toast("🎉 ¡Préstamo liquidado!")
@@ -641,4 +658,3 @@ def ver_movimientos_caja():
             st.dataframe(df, use_container_width=True)
         finally:
             conn.close()
-
