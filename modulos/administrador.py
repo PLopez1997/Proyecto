@@ -283,6 +283,9 @@ def listar_usuarios():
 # CREAR CICLO (ya SIN vínculo a grupo)
 # ------------------------------------
 
+# ==========================================
+# SECCIÓN 4: GESTIÓN DE CICLOS Y CIERRE
+# ==========================================
 def create_cycle_form(ref_data):
     # Redirigimos a la nueva función completa
     menu_gestion_ciclos(ref_data)
@@ -302,9 +305,10 @@ def menu_gestion_ciclos(ref_data):
             
             duracion = st.number_input("Duración (meses)", min_value=6, max_value=12, value=12)
             meta_ahorro = st.number_input("Meta de Ahorro Grupal ($)", min_value=0.0)
+            estado = st.selectbox("Estado Inicial", ["Activo", "Planificado"])
             
             if st.form_submit_button("Registrar Inicio de Ciclo"):
-                guardar_ciclo_bd(fecha_inicio, fecha_cierre, duracion, meta_ahorro)
+                guardar_ciclo_bd(fecha_inicio, fecha_cierre, estado)
         
         # Mostrar ciclos existentes
         if "ciclos" in ref_data and not ref_data["ciclos"].empty:
@@ -349,31 +353,35 @@ def vista_cierre_ciclo():
         st.success("✅ Todas las validaciones operativas pasaron. El sistema está listo para el cálculo.")
         
         # Calcular Saldo en Caja (Dinero real disponible)
-        # (Ingresos - Egresos)
-        cur.execute("SELECT Tipo_transaccion, Monto FROM Caja")
-        movs = cur.fetchall()
-        ingresos = sum(m[1] for m in movs if m[0] == 'Ingreso')
-        egresos = sum(m[1] for m in movs if m[0] == 'Egreso')
-        saldo_caja = ingresos - egresos
+        # Nota: Sumamos Ahorros + (Ingresos Caja - Egresos Caja)
+        # Esto asume que los Ahorros NO se insertan en la tabla Caja como 'Ingreso', sino solo en tabla Ahorro.
         
-        # Calcular Total Ahorrado (Capital de los socios)
+        # Total Ahorrado (Capital de los socios)
         cur.execute("SELECT SUM(Monto) FROM Ahorro")
         res_ahorro = cur.fetchone()
         total_ahorros = float(res_ahorro[0]) if res_ahorro and res_ahorro[0] else 0.0
         
-        # Calcular Utilidad Neta (Ganancia)
-        # Utilidad = Dinero en Caja - Capital que la gente puso
-        utilidad_neta = saldo_caja - total_ahorros
+        # Flujo de Caja (Intereses, Multas, Préstamos salientes)
+        cur.execute("SELECT Tipo_transaccion, Monto FROM Caja")
+        movs = cur.fetchall()
+        ingresos_caja = sum(m[1] for m in movs if m[0] == 'Ingreso')
+        egresos_caja = sum(m[1] for m in movs if m[0] == 'Egreso')
+        
+        # El dinero físico real debería ser: Ahorros + Ganancias - Préstamos activos (que deben ser 0)
+        saldo_real_disponible = total_ahorros + (ingresos_caja - egresos_caja)
+        
+        # Utilidad = Lo que hay en caja MENOS lo que la gente puso de su bolsillo
+        utilidad_neta = saldo_real_disponible - total_ahorros
         
         # Evitar utilidades negativas en la vista (pérdidas)
         es_perdida = False
         if utilidad_neta < 0:
             es_perdida = True
-            st.warning(f"⚠️ Atención: El saldo en caja (${saldo_caja:,.2f}) es menor que lo ahorrado (${total_ahorros:,.2f}). Hay pérdidas.")
+            st.warning(f"⚠️ Atención: El saldo real (${saldo_real_disponible:,.2f}) es menor que lo ahorrado (${total_ahorros:,.2f}). Hay pérdidas.")
 
         # 3. VISTA PREVIA DE NÚMEROS
         col1, col2, col3 = st.columns(3)
-        col1.metric("💵 Dinero en Caja", f"${saldo_caja:,.2f}")
+        col1.metric("💵 Dinero en Caja (Total)", f"${saldo_real_disponible:,.2f}")
         col2.metric("🐷 Capital Ahorrado", f"${total_ahorros:,.2f}")
         col3.metric("📈 Utilidad a Repartir", f"${utilidad_neta:,.2f}", delta="Ganancia" if not es_perdida else "-Pérdida")
         
@@ -394,24 +402,28 @@ def vista_cierre_ciclo():
         if not df_reparto.empty and total_ahorros > 0:
             # Lógica de tres simple: (MiAhorro / TotalAhorro) * Utilidad
             df_reparto['Participación %'] = (df_reparto['AhorroIndividual'] / total_ahorros) * 100
-            df_reparto['Ganancia Estimada'] = (df_reparto['Participación %'] / 100) * utilidad_neta
-            df_reparto['Total a Retirar'] = df_reparto['AhorroIndividual'] + df_reparto['Ganancia Estimada']
+            
+            # Si hay pérdida, se reparte la pérdida
+            df_reparto['Ganancia/Pérdida'] = (df_reparto['Participación %'] / 100) * utilidad_neta
+            
+            df_reparto['Total a Retirar'] = df_reparto['AhorroIndividual'] + df_reparto['Ganancia/Pérdida']
             
             # Formato visual
             st.dataframe(df_reparto.style.format({
                 'AhorroIndividual': '${:,.2f}',
                 'Participación %': '{:.2f}%',
-                'Ganancia Estimada': '${:,.2f}',
+                'Ganancia/Pérdida': '${:,.2f}',
                 'Total a Retirar': '${:,.2f}'
             }), use_container_width=True)
             
             # 5. GENERACIÓN DE ACTA
             if st.button("📝 Generar Acta de Cierre y Finalizar Ciclo", type="primary"):
-                acta_texto = generar_texto_acta(saldo_caja, total_ahorros, utilidad_neta, df_reparto)
-                st.text_area("ACTA DE CIERRE DE CICLO", value=acta_texto, height=400)
+                acta_texto = generar_texto_acta(saldo_real_disponible, total_ahorros, utilidad_neta, df_reparto)
+                st.text_area("ACTA DE CIERRE DE CICLO - COPIAR Y GUARDAR", value=acta_texto, height=400)
                 st.balloons()
-                # Aquí podrías agregar un UPDATE a la tabla Ciclo para poner Estado='Cerrado'
-                # update_ciclo_cerrado(conn) 
+                # Opcional: Marcar ciclo como cerrado en BD
+                # cur.execute("UPDATE Ciclo SET Estado='Cerrado' WHERE Estado='Activo'")
+                # conn.commit()
         else:
             st.info("No hay ahorros registrados para calcular distribución.")
 
@@ -445,7 +457,7 @@ def generar_texto_acta(caja, ahorros, utilidad, df_detalle):
     """
     
     for index, row in df_detalle.iterrows():
-        linea = f"- {row['Nombre']}: Ahorró ${row['AhorroIndividual']:,.2f} -> Gana ${row['Ganancia Estimada']:,.2f} -> Retira Total: ${row['Total a Retirar']:,.2f}\n"
+        linea = f"- {row['Nombre']}: Ahorró ${row['AhorroIndividual']:,.2f} -> Gana ${row['Ganancia/Pérdida']:,.2f} -> Retira Total: ${row['Total a Retirar']:,.2f}\n"
         texto += linea
         
     texto += """
@@ -457,22 +469,21 @@ def generar_texto_acta(caja, ahorros, utilidad, df_detalle):
     """
     return texto
 
-def guardar_ciclo_bd(inicio, cierre, duracion, meta):
+def guardar_ciclo_bd(inicio, cierre, estado):
     conn = obtener_conexion()
     if conn:
         try:
             cursor = conn.cursor()
-            # Asegúrate que tu tabla Ciclo tenga estas columnas, si no, ajusta el INSERT
-            query = "INSERT INTO Ciclo (Fecha_inicio, Fecha_fin, Estado) VALUES (%s, %s, 'Activo')"
-            cursor.execute(query, (inicio, cierre))
+            # Verifica nombres de columnas en tu BD
+            query = "INSERT INTO Ciclo (Fecha_inicio, Fecha_fin, Estado) VALUES (%s, %s, %s)"
+            cursor.execute(query, (inicio, cierre, estado))
             conn.commit()
-            st.success("✅ Nuevo ciclo iniciado correctamente.")
+            st.success("✅ Nuevo ciclo registrado.")
             st.rerun()
         except Exception as e:
             st.error(f"Error al guardar ciclo: {e}")
         finally:
             conn.close()
-
 # -----------------------
 # GESTIÓN DE GRUPOS (creación vinculada a tabla real)
 # -----------------------
