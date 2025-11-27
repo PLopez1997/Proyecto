@@ -123,8 +123,9 @@ def obtener_todas_multas_distrito(id_distrito):
     df = pd.DataFrame()
     if conn:
         try:
+            # CORRECCIÓN AQUÍ: Se agregó "AS Monto_Multa" para coincidir con el DataFrame
             query = """
-                SELECT m.Nombre AS Miembro, g.Nombre AS Grupo, mu.Monto, mu.Motivo, mu.Estado
+                SELECT m.Nombre AS Miembro, g.Nombre AS Grupo, mu.Monto AS Monto_Multa, mu.Motivo, mu.Estado
                 FROM Multa mu
                 JOIN Miembro m ON mu.Id_miembro = m.Id_miembro
                 JOIN Grupo g ON m.Id_grupo = g.Id_grupo
