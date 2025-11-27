@@ -1,6 +1,14 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from modulos.config.conexion import obtener_conexion
+
+# NOTA: Asegúrate de tener tu archivo de conexión configurado correctamente
+# from modulos.config.conexion import obtener_conexion
+
+def obtener_conexion_safe():
+    """Wrapper seguro para obtener conexión"""
+    return obtener_conexion()
 
 def junta_directiva_page():
     st.title("Panel de Control - Directiva")
@@ -11,13 +19,10 @@ def junta_directiva_page():
 
     if choice == "Gestionar Miembros":
         gestionar_miembros()
-
     elif choice == "Gestionar Reuniones":
         gestionar_reuniones()
-        
     elif choice == "Caja y Préstamos":
         gestionar_caja_prestamos()
-
     elif choice == "Reportes":
         show_reports()
 
@@ -141,7 +146,6 @@ def gestionar_reuniones():
 # SECCIÓN 3: CAJA Y PRÉSTAMOS (CORREGIDO)
 # ==========================================
 
-
 def gestionar_caja_prestamos():
     st.header("💰 Gestión Financiera: Caja y Créditos")
     
@@ -186,51 +190,44 @@ def gestionar_caja_prestamos():
             else:
                 st.warning("No hay miembros registrados.")
 
-       # --- PESTAÑA 2: REGISTRAR PAGO (LIQUIDACIÓN AUTOMÁTICA) ---
-   # --- PESTAÑA 2: REGISTRAR PAGO (LIQUIDACIÓN AUTOMÁTICA) ---
+    # --- PESTAÑA 2: REGISTRAR PAGO (CORREGIDO) ---
     with tab2:
         st.subheader("Cobro de Cuotas")
-        # Asegúrate de que esta función haga un JOIN con la tabla de miembros
-        # para poder obtener 'Nombre_Miembro', ya que en la tabla Prestamo solo tienes 'Id_miembro'
         prestamos = obtener_prestamos_activos() 
         
         if prestamos:
             prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
-                # Nota: Asegúrate de que tu consulta SQL traiga el alias 'Nombre_Miembro'
                 format_func=lambda x: f"{x['Nombre_Miembro']} - Saldo Orig: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
             )
             
             st.markdown("---")
             c1, c2 = st.columns(2)
-            # Usamos las llaves exactas de tu tabla Prestamo
             c1.metric("Monto Original", f"${prestamo_sel['Monto']}") 
             c2.metric("Tasa Interés", f"{prestamo_sel['Interes']}%")
             
             with st.form("form_pago"):
                 c1, c2 = st.columns(2)
-                # Estas variables coincidirán con Monto_capital y Monto_interes
                 abono_capital = c1.number_input("Abono a Capital ($)", min_value=0.0)
                 pago_interes = c2.number_input("Pago de Interés ($)", min_value=0.0)
-                fecha_pago = st.date_input("Fecha de pago")
+                fecha_pago_input = st.date_input("Fecha de pago")
                 
-                # Opcional: Si quieres registrar multas, agrega un input, si no, lo mandamos en 0
-                # monto_multa = st.number_input("Multa", min_value=0.0) 
-
                 if st.form_submit_button("Registrar Pago"):
                     try:
-                        # CORRECCIÓN PRINCIPAL AQUÍ:
+                        # --- CORRECCIÓN EN LA LLAMADA ---
+                        # Enviamos los argumentos exactos que espera la función corregida
                         registrar_pago_bd(
                             id_prestamo=prestamo_sel['Id_prestamo'], 
-                            monto_capital=abono_capital, 
-                            monto_interes=pago_interes, 
-                            fecha_pago=fecha_pago, 
-                            id_multa=0,  # Enviamos 0 o None porque la tabla Pagos lo pide
-                            monto_original=prestamo_sel['Monto'] # Para lógica de validación
+                            capital=abono_capital, 
+                            interes=pago_interes, 
+                            fecha=fecha_pago_input, 
+                            id_grupo=prestamo_sel['Id_grupo'], # NECESARIO para la caja
+                            monto_original=prestamo_sel['Monto'],
+                            id_multa=0 # Opcional, pero bueno enviarlo si la función lo maneja
                         )
                         st.success("Pago registrado correctamente")
-                        st.rerun() # Recargar la página para actualizar saldos
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Error al registrar: {e}")
         else:
@@ -279,7 +276,6 @@ def show_reports():
             ing = df_global[df_global['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
             egr = df_global[df_global['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
             
-            # Sumamos ahorros al saldo global para mostrar realidad
             res_ahorro = pd.read_sql("SELECT SUM(Monto) FROM Ahorro", conn).iloc[0,0]
             total_ahorros = float(res_ahorro) if res_ahorro else 0.0
             saldo_global = total_ahorros + (ing - egr)
@@ -308,11 +304,8 @@ def show_reports():
         conn.close()
 
 # ==========================================
-# FUNCIONES SQL (BACKEND)
+# FUNCIONES SQL (BACKEND CORREGIDO)
 # ==========================================
-
-def obtener_conexion_safe():
-    return obtener_conexion()
 
 # --- MIEMBROS ---
 def guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id):
@@ -424,7 +417,8 @@ def guardar_asistencia_bd(id_reunion, dict_asistencia):
             
             cursor.executemany(query, vals)
             if multas:
-                cursor.executemany("INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, %s)", multas)
+                # OJO: La tabla Multa tiene Fecha, agregamos NOW()
+                cursor.executemany("INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado, Fecha) VALUES (%s, %s, %s, %s, NOW())", multas)
             conn.commit()
             st.toast("Asistencia guardada.")
         except Exception as e:
@@ -472,21 +466,15 @@ def ver_ahorros_reunion(id_reunion):
 # --- CAJA Y CRÉDITOS (CORREGIDO) ---
 
 def calcular_saldo_disponible():
-    """
-    Calcula el saldo real: Total Ahorros + (Ingresos Caja - Egresos Caja)
-    """
     conn = obtener_conexion_safe()
     saldo = 0.0
     if conn:
         try:
             cursor = conn.cursor()
-            
-            # 1. Total Ahorros (Capital)
             cursor.execute("SELECT SUM(Monto) FROM Ahorro")
             res = cursor.fetchone()
             ahorros = float(res[0]) if res and res[0] else 0.0
 
-            # 2. Flujo Neto Caja (Intereses, Multas - Préstamos)
             cursor.execute("SELECT Tipo_transaccion, Monto FROM Caja")
             movs = cursor.fetchall()
             caja_neta = 0.0
@@ -522,34 +510,26 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
         finally:
             conn.close()
 
-# --- FUNCION AGREGADA QUE FALTABA ---
-def obtener_amortizado_prestamo(id_prestamo):
-    conn = obtener_conexion_safe()
-    pagado = 0.0
-    if conn:
-        try:
-            cursor = conn.cursor()
-            # Sumamos solo Capital (Pagos con S)
-            cursor.execute("SELECT SUM(Monto_capital) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
-            res = cursor.fetchone()
-            if res and res[0]:
-                pagado = float(res[0])
-        except: pass
-        finally: conn.close()
-    return pagado
-
-def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_original):
-    """Registra el pago y liquida el préstamo si se completa el capital"""
+# --- FUNCIÓN CORREGIDA PRINCIPAL ---
+def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_original, id_multa=0):
+    """
+    Registra el pago y liquida el préstamo si se completa el capital.
+    CORRECCIONES:
+    1. Usa 'Fecha_pago' en lugar de 'Fecha' en la tabla PAGOS.
+    2. Agregado 'Id_multa' al insert porque la tabla lo tiene.
+    3. Se requiere id_grupo para insertar en la CAJA.
+    """
     conn = obtener_conexion_safe()
     if conn:
         try:
             cursor = conn.cursor()
             
-            # 1. Registrar Pago (Tabla Pagos con S)
-            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha) VALUES (%s, %s, %s, %s)"
-            cursor.execute(q_p, (id_prestamo, capital, interes, fecha))
+            # 1. Registrar Pago (CORREGIDO: Fecha -> Fecha_pago, agregado Id_multa)
+            # Nota: Si tu base de datos acepta NULL en Id_multa, usa None, si no, usa 0.
+            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha_pago, Id_multa) VALUES (%s, %s, %s, %s, %s)"
+            cursor.execute(q_p, (id_prestamo, capital, interes, fecha, id_multa))
             
-            # 2. Ingreso Caja
+            # 2. Ingreso Caja (Requiere Id_grupo)
             total = capital + interes
             q_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, %s, %s)"
             cursor.execute(q_c, (id_grupo, total, fecha, f"Pago Préstamo {id_prestamo}"))
@@ -565,10 +545,9 @@ def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_orig
                 st.toast("🎉 ¡Préstamo liquidado!")
             
             conn.commit()
-            st.success("Pago registrado.")
-            st.rerun()
         except Exception as e:
-            st.error(f"Error pago: {e}")
+            conn.rollback()
+            raise e # Lanzamos el error para que lo capture el try/except del frontend
         finally:
             conn.close()
 
