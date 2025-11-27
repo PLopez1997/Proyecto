@@ -121,7 +121,7 @@ def gestionar_reuniones():
             st.info("Cree una reunión primero.")
 
 # ==========================================
-# SECCIÓN 3: CAJA Y PRÉSTAMOS (LÓGICA MEJORADA)
+# SECCIÓN 3: CAJA Y PRÉSTAMOS
 # ==========================================
 
 def gestionar_caja_prestamos():
@@ -160,14 +160,12 @@ def gestionar_caja_prestamos():
             else:
                 st.warning("No hay miembros.")
 
-    # --- REGISTRAR PAGO (MEJORADO) ---
+    # --- REGISTRAR PAGO ---
     with tab2:
         st.subheader("Cobro de Cuotas")
-        # Esta función ahora trae el 'Saldo_Pendiente' calculado desde SQL
         prestamos = obtener_prestamos_activos() 
         
         if prestamos:
-            # Dropdown inteligente con Saldo Restante
             prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
@@ -175,7 +173,6 @@ def gestionar_caja_prestamos():
             )
             
             st.markdown("---")
-            # Métricas visuales
             col1, col2, col3 = st.columns(3)
             col1.metric("Monto Original", f"${prestamo_sel['Monto']:,.2f}")
             col2.metric("Saldo Pendiente", f"${prestamo_sel['Saldo_Pendiente']:,.2f}", delta_color="inverse")
@@ -185,8 +182,6 @@ def gestionar_caja_prestamos():
 
             with st.form("form_pago"):
                 c1, c2 = st.columns(2)
-                
-                # Input limitado al saldo restante para evitar sobrepagos
                 abono_capital = c1.number_input(
                     "Abono a Capital ($)", 
                     min_value=0.0, 
@@ -199,7 +194,6 @@ def gestionar_caja_prestamos():
                 
                 if st.form_submit_button("Registrar Pago"):
                     try:
-                        # Llamamos a la función que inserta y verifica si liquida
                         registrar_pago_bd(
                             id_prestamo=prestamo_sel['Id_prestamo'], 
                             capital=abono_capital, 
@@ -207,23 +201,20 @@ def gestionar_caja_prestamos():
                             fecha=fecha_pago_input, 
                             id_grupo=prestamo_sel['Id_grupo'],
                             monto_original=prestamo_sel['Monto'],
-                            id_multa=0 # Default
+                            id_multa=0
                         )
-                        
-                        # Mensaje feedback usuario
                         if abono_capital >= float(prestamo_sel['Saldo_Pendiente']):
                             st.balloons()
                             st.success("¡Pago registrado y PRÉSTAMO LIQUIDADO exitosamente!")
                         else:
                             st.success("Pago parcial registrado correctamente.")
-                            
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error al registrar: {e}")
         else:
             st.info("✅ No hay préstamos pendientes de cobro.")
 
-   # --- MULTAS (MEJORADO) ---
+    # --- MULTAS (MEJORADO) ---
     with tab3:
         st.subheader("Gestión de Multas")
         c1, c2 = st.columns(2)
@@ -242,7 +233,6 @@ def gestionar_caja_prestamos():
             # Llamamos a la función actualizada que incluye el botón de pago
             listar_multas_pendientes()
 
-
     # --- CAJA ---
     with tab4:
         st.subheader("Movimientos de Caja")
@@ -252,85 +242,7 @@ def gestionar_caja_prestamos():
 # FUNCIONES SQL (BACKEND)
 # ==========================================
 
-# ... (Las funciones de Miembros y Reuniones se mantienen igual, solo pondré las modificadas) ...
-# Para ahorrar espacio en la respuesta, asumo que las funciones:
-# guardar_miembro_bd, listar_miembros, eliminar_miembro_bd, obtener_lista_miembros_simple
-# crear_reunion_bd, obtener_reuniones_del_grupo, guardar_asistencia_bd, guardar_ahorro_bd, ver_ahorros_reunion
-# calcular_saldo_disponible, crear_prestamo_bd, aplicar_multa_bd, listar_multas_pendientes, pagar_multa_bd, ver_movimientos_caja
-# ... SON LAS MISMAS QUE EN EL CÓDIGO ANTERIOR. 
-
-# AQUI ESTAN LAS MODIFICACIONES CLAVE:
-
-# --- 1. MODIFICADA PARA CALCULAR SALDO RESTANTE ---
-def obtener_prestamos_activos():
-    conn = obtener_conexion_safe()
-    data = []
-    if conn:
-        try:
-            cursor = conn.cursor(dictionary=True)
-            grupo_id = st.session_state.get('grupo_id')
-            
-            # LEFT JOIN con la tabla PAGOS para sumar lo que se ha abonado a capital
-            # COALESCE convierte NULL en 0 si no hay pagos aún.
-            query = """
-                SELECT 
-                    p.Id_prestamo, 
-                    p.Monto, 
-                    p.Interes, 
-                    p.Fecha_inicio, 
-                    m.Nombre as Nombre_Miembro, 
-                    p.Id_miembro, 
-                    m.Id_grupo,
-                    (p.Monto - COALESCE(SUM(pg.Monto_capital), 0)) AS Saldo_Pendiente
-                FROM Prestamo p
-                JOIN Miembro m ON p.Id_miembro = m.Id_miembro
-                LEFT JOIN Pagos pg ON p.Id_prestamo = pg.Id_prestamo
-                WHERE m.Id_grupo = %s AND p.Estado = 'Activo'
-                GROUP BY p.Id_prestamo, p.Monto, p.Interes, p.Fecha_inicio, m.Nombre, p.Id_miembro, m.Id_grupo
-            """
-            cursor.execute(query, (grupo_id,))
-            data = cursor.fetchall()
-        finally:
-            conn.close()
-    return data
-
-# --- 2. MODIFICADA PARA CAMBIO DE ESTADO AUTOMÁTICO ---
-def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_original, id_multa=0):
-    conn = obtener_conexion_safe()
-    if conn:
-        try:
-            cursor = conn.cursor()
-            
-            # A. Insertar el Pago (Usando Fecha_pago correcto)
-            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha_pago, Id_multa) VALUES (%s, %s, %s, %s, %s)"
-            cursor.execute(q_p, (id_prestamo, capital, interes, fecha, id_multa))
-            
-            # B. Registrar Ingreso en Caja
-            total = capital + interes
-            q_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, %s, %s)"
-            cursor.execute(q_c, (id_grupo, total, fecha, f"Pago Préstamo {id_prestamo}"))
-            
-            # C. VERIFICACIÓN DE LIQUIDACIÓN
-            # Obtenemos la suma total de capital pagado para este préstamo hasta el momento
-            cursor.execute("SELECT SUM(Monto_capital) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
-            res = cursor.fetchone()
-            total_abonado = float(res[0]) if res and res[0] else 0.0
-            
-            # Si lo abonado es mayor o igual al monto original (con pequeño margen de error flotante)
-            if total_abonado >= (float(monto_original) - 0.01):
-                cursor.execute("UPDATE Prestamo SET Estado = 'Pagado' WHERE Id_prestamo = %s", (id_prestamo,))
-                print(f"Prestamo {id_prestamo} liquidado.")
-            
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.close()
-
-# --- Funciones Auxiliares que necesitas que estén para que corra el script completo ---
-# (Repito las necesarias para que el copy-paste funcione directo)
-
+# ... FUNCIONES BASE (Iguales a la versión anterior) ...
 def guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id):
     conn = obtener_conexion_safe()
     if conn:
@@ -476,16 +388,77 @@ def aplicar_multa_bd(id_miembro, monto, motivo):
         except: pass
         finally: conn.close()
 
+# --- AQUÍ ESTÁ LA ACTUALIZACIÓN CLAVE ---
+
 def listar_multas_pendientes():
     conn = obtener_conexion_safe()
     if conn:
         try:
             grupo_id = st.session_state.get('grupo_id')
-            df = pd.read_sql("SELECT mu.Id_multa, m.Nombre, mu.Monto FROM Multa mu JOIN Miembro m ON mu.Id_miembro=m.Id_miembro WHERE m.Id_grupo=%s AND mu.Estado='Pendiente'", conn, params=(grupo_id,))
-            if not df.empty: st.dataframe(df, use_container_width=True)
-            else: st.info("Sin multas.")
-        except: pass
-        finally: conn.close()
+            # Traemos ID, Nombre, Monto y Motivo de las pendientes
+            query = """
+                SELECT mu.Id_multa, m.Nombre, mu.Monto, mu.Motivo 
+                FROM Multa mu 
+                JOIN Miembro m ON mu.Id_miembro=m.Id_miembro 
+                WHERE m.Id_grupo=%s AND mu.Estado='Pendiente'
+            """
+            df = pd.read_sql(query, conn, params=(grupo_id,))
+            
+            if not df.empty:
+                # Mostramos la tabla solo con datos relevantes
+                st.dataframe(df[['Nombre', 'Monto', 'Motivo']], use_container_width=True)
+                
+                # --- ZONA DE PAGO ---
+                st.markdown("##### 💸 Pagar Multa")
+                col_pay1, col_pay2 = st.columns([3, 1])
+                
+                # Convertimos a diccionario para facilitar la selección
+                opciones = df.to_dict('records')
+                
+                with col_pay1:
+                    multa_a_pagar = st.selectbox(
+                        "Seleccione multa a liquidar:",
+                        options=opciones,
+                        format_func=lambda x: f"{x['Nombre']} - ${x['Monto']} ({x['Motivo']})",
+                        label_visibility="collapsed"
+                    )
+                
+                with col_pay2:
+                    if st.button("Pagar", type="primary", use_container_width=True):
+                        pagar_multa_bd(multa_a_pagar['Id_multa'])
+            else:
+                st.info("👏 No hay multas pendientes.")
+        except Exception as e:
+            st.error(f"Error listando multas: {e}")
+        finally:
+            conn.close()
+
+def pagar_multa_bd(id_multa):
+    conn = obtener_conexion_safe()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            grupo_id = st.session_state.get('grupo_id')
+            
+            # 1. Obtener el monto antes de actualizar
+            cursor.execute("SELECT Monto FROM Multa WHERE Id_multa = %s", (id_multa,))
+            res = cursor.fetchone()
+            if res:
+                monto = res[0]
+                
+                # 2. Actualizar estado a 'Pagado'
+                cursor.execute("UPDATE Multa SET Estado = 'Pagado' WHERE Id_multa = %s", (id_multa,))
+                
+                # 3. Registrar Ingreso en Caja
+                cursor.execute("INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, NOW(), 'Pago Multa')", (grupo_id, monto))
+                
+                conn.commit()
+                st.success("Multa pagada y registrada en caja.")
+                st.rerun() # Recarga la página para quitarla de la lista pendiente
+        except Exception as e:
+            st.error(f"Error al pagar multa: {e}")
+        finally:
+            conn.close()
 
 def ver_movimientos_caja():
     conn = obtener_conexion_safe()
@@ -498,3 +471,113 @@ def ver_movimientos_caja():
 
 def show_reports():
     st.info("Módulo de reportes")
+
+def obtener_prestamos_activos():
+    conn = obtener_conexion_safe()
+    data = []
+    if conn:
+        try:
+            cursor = conn.cursor(dictionary=True)
+            grupo_id = st.session_state.get('grupo_id')
+            
+            query = """
+                SELECT 
+                    p.Id_prestamo, 
+                    p.Monto, 
+                    p.Interes, 
+                    p.Fecha_inicio, 
+                    m.Nombre as Nombre_Miembro, 
+                    p.Id_miembro, 
+                    m.Id_grupo,
+                    (p.Monto - COALESCE(SUM(pg.Monto_capital), 0)) AS Saldo_Pendiente
+                FROM Prestamo p
+                JOIN Miembro m ON p.Id_miembro = m.Id_miembro
+                LEFT JOIN Pagos pg ON p.Id_prestamo = pg.Id_prestamo
+                WHERE m.Id_grupo = %s AND p.Estado = 'Activo'
+                GROUP BY p.Id_prestamo, p.Monto, p.Interes, p.Fecha_inicio, m.Nombre, p.Id_miembro, m.Id_grupo
+            """
+            cursor.execute(query, (grupo_id,))
+            data = cursor.fetchall()
+        finally:
+            conn.close()
+    return data
+
+def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_original, id_multa=0):
+    conn = obtener_conexion_safe()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha_pago, Id_multa) VALUES (%s, %s, %s, %s, %s)"
+            cursor.execute(q_p, (id_prestamo, capital, interes, fecha, id_multa))
+            total = capital + interes
+            q_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, %s, %s)"
+            cursor.execute(q_c, (id_grupo, total, fecha, f"Pago Préstamo {id_prestamo}"))
+            cursor.execute("SELECT SUM(Monto_capital) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
+            res = cursor.fetchone()
+            total_abonado = float(res[0]) if res and res[0] else 0.0
+            if total_abonado >= (float(monto_original) - 0.01):
+                cursor.execute("UPDATE Prestamo SET Estado = 'Pagado' WHERE Id_prestamo = %s", (id_prestamo,))
+                print(f"Prestamo {id_prestamo} liquidado.")
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+#---------------
+#REPORTE
+    
+def show_reports():
+    st.header("📊 Reportes Consolidados")
+    
+    conn = obtener_conexion()
+    if not conn:
+        st.error("No hay conexión con la base de datos.")
+        return
+
+    try:
+        grupo_id = st.session_state.get('grupo_id')
+        
+        # 1. CONSULTA GLOBAL (Saldo Caja Común)
+        df_global = pd.read_sql("SELECT Tipo_transaccion, Monto FROM Caja", conn)
+        
+        saldo_global = 0.0
+        if not df_global.empty:
+            ing = df_global[df_global['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
+            egr = df_global[df_global['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
+            saldo_global = ing - egr
+
+        # 2. CONSULTA LOCAL (Historial del Grupo)
+        query_local = """
+            SELECT Fecha, Detalle, Tipo_transaccion, Monto 
+            FROM Caja 
+            WHERE Id_grupo = %s 
+            ORDER BY Fecha DESC
+        """
+        df_local = pd.read_sql(query_local, conn, params=(grupo_id,))
+
+        # --- VISUALIZACIÓN ---
+        st.metric("💰 SALDO DISPONIBLE (Fondo Común)", f"${saldo_global:,.2f}")
+        st.markdown("---")
+
+        if not df_local.empty:
+            st.subheader("📜 Historial de Movimientos de MI GRUPO")
+            
+            if 'Fecha' in df_local.columns:
+                df_local['Fecha'] = pd.to_datetime(df_local['Fecha']).dt.date
+            
+            # Flujo visual
+            df_local['Flujo'] = df_local.apply(lambda x: x['Monto'] if x['Tipo_transaccion'] == 'Ingreso' else -x['Monto'], axis=1)
+            
+            st.dataframe(df_local[['Fecha', 'Detalle', 'Tipo_transaccion', 'Monto']], use_container_width=True)
+            st.bar_chart(df_local, x="Fecha", y="Flujo", color="Tipo_transaccion")
+            
+        else:
+            st.info("Este grupo aún no ha registrado movimientos.")
+
+    except Exception as e:
+        st.error(f"Error cargando reportes: {e}")
+    finally:
+        conn.close()
+
