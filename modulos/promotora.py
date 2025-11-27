@@ -365,3 +365,116 @@ if __name__ == "__main__":
     if 'id_distrito_actual' not in st.session_state:
         st.session_state['id_distrito_actual'] = 1 
     app()
+
+# -----------------------
+# GESTIÓN DE GRUPOS (creación vinculada a tabla real)
+# -----------------------
+
+def asignar_distrito_a_grupo_existente():
+    """
+    Función que SOLO aparece en Grupos y Distritos para asignar
+    un distrito a un grupo existente mediante UPDATE.
+    """
+    st.markdown("---")
+    st.subheader("➕ Asignar grupo a distrito")
+    st.caption("Escriba el nombre exacto del grupo existente para vincularlo a un distrito.")
+
+    nuevo_nombre = st.text_input("Nombre del Grupo (existente):")
+    nuevo_distrito = st.selectbox("Seleccione el distrito del grupo:", [1, 2, 3])
+
+    if st.button("Guardar/Vincular Grupo"):
+        if nuevo_nombre.strip() == "":
+            st.error("Debe ingresar un nombre para buscar el grupo.")
+        else:
+            conn = obtener_conexion()
+            if conn:
+                try:
+                    cur = conn.cursor()
+                    # LÓGICA PEDIDA: BUSCAR NOMBRE -> UPDATE COLUMNA ID_DISTRITO
+                    update_query = """
+                        UPDATE Grupo 
+                        SET Id_distrito = %s 
+                        WHERE Nombre = %s
+                    """
+                    cur.execute(update_query, (nuevo_distrito, nuevo_nombre))
+                    
+                    if cur.rowcount > 0:
+                        conn.commit()
+                        st.success(f"✅ Se asignó el Distrito {nuevo_distrito} al grupo '{nuevo_nombre}'.")
+                    else:
+                        st.warning(f"No se encontró ningún grupo llamado '{nuevo_nombre}'. Verifique el nombre.")
+                        
+                except Exception as e:
+                    st.error(f"Error al actualizar el grupo: {e}")
+                finally:
+                    conn.close()
+
+def create_new_group(ref_data):
+    st.subheader("➕ Crear Nuevo Grupo")
+    grupos_df = ref_data["grupos"]
+    ciclos_df = ref_data["ciclos"]
+
+    with st.form("form_nuevo_grupo"):
+        nombre = st.text_input("Nombre del Grupo")
+        fecha_inicio = st.date_input("Fecha inicio")
+        id_ciclo = None
+        if not ciclos_df.empty:
+            ciclo_sel = st.selectbox("Ciclo (opcional)", ciclos_df["Nombre"].tolist())
+            id_ciclo = int(ciclos_df.loc[ciclos_df["Nombre"] == ciclo_sel, "Id_ciclo"].iloc[0])
+        else:
+            id_ciclo = None
+
+        tasa = st.number_input("Tasa de interés", min_value=0.0, value=0.1)
+        tipo_multa = st.text_input("Tipo de multa", value="")
+        regla = st.text_area("Regla interna", value="")
+
+        submitted = st.form_submit_button("Crear Grupo")
+        if submitted:
+            if not nombre:
+                st.error("Nombre obligatorio")
+                return
+
+            con = obtener_conexion()
+            if not con:
+                st.error("No hay conexión a BD")
+                return
+            try:
+                grupo_table = next((t for t in ["grupos", "Grupo", "GrupoS", "GRUPOS"] if table_columns(con, t)), None)
+                if not grupo_table:
+                    st.error("No se encontró tabla de grupos en la BD.")
+                    return
+
+                cols = table_columns(con, grupo_table)
+                insert_cols = []
+                params = []
+                placeholders = []
+
+                def maybe_add(colname, value):
+                    if colname in cols:
+                        insert_cols.append(colname)
+                        placeholders.append("%s")
+                        params.append(value)
+
+                maybe_add("Nombre", nombre)
+                maybe_add("Fecha_inicio", str(fecha_inicio))
+                maybe_add("Id_ciclo", id_ciclo)
+                maybe_add("Tasa_interes", tasa)
+                maybe_add("Tipo_multa", tipo_multa)
+                maybe_add("Regla_interna", regla)
+
+                if not insert_cols:
+                    st.error("Estructura de tabla grupos no reconocida.")
+                    return
+
+                sql = f"INSERT INTO {grupo_table} ({', '.join('' + c + '' for c in insert_cols)}) VALUES ({', '.join(placeholders)})"
+                cur = con.cursor()
+                cur.execute(sql, tuple(params))
+                con.commit()
+                st.success("Grupo creado correctamente en la BD.")
+                cur.close()
+                st.rerun()
+            except Exception as e:
+                con.rollback()
+                st.error(f"Error al crear grupo: {e}")
+            finally:
+                con.close()
