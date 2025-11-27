@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-# Ajusta este import si tu carpeta de configuración tiene otro nombre, 
-# pero esta es la ruta estándar sugerida.
-from modulos.config.conexion import obtener_conexion 
+from modulos.config.conexion import obtener_conexion
 
 def junta_directiva_page():
     st.title("Panel de Control - Directiva")
@@ -44,7 +42,6 @@ def gestionar_miembros():
                 telefono = st.text_input("Teléfono")
                 direccion = st.text_input("Dirección")
                 
-                # Roles: 1:Pres, 2:Tes, 3:Miembro, 4:Sec
                 rol_id = st.selectbox(
                     "Asignar Rol", 
                     options=[1, 2, 4, 3], 
@@ -56,9 +53,7 @@ def gestionar_miembros():
                     }.get(x, "Desconocido")
                 )
             
-            submitted = st.form_submit_button("Guardar Miembro")
-            
-            if submitted:
+            if st.form_submit_button("Guardar Miembro"):
                 if nombre and apellido and dui:
                     nombre_completo = f"{nombre} {apellido}"
                     guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id)
@@ -83,11 +78,9 @@ def gestionar_reuniones():
     with tab1:
         st.subheader("Crear nueva reunión")
         with st.form("form_reunion"):
-            col1, col2 = st.columns(2)
-            with col1:
-                fecha = st.date_input("Fecha")
-            with col2:
-                tema = st.text_input("Tema")
+            c1, c2 = st.columns(2)
+            fecha = c1.date_input("Fecha")
+            tema = c2.text_input("Tema")
             
             if st.form_submit_button("Crear Reunión"):
                 crear_reunion_bd(fecha, tema)
@@ -97,7 +90,7 @@ def gestionar_reuniones():
         st.subheader("Tomar Asistencia")
         reuniones = obtener_reuniones_del_grupo()
         if reuniones:
-            reunion_sel = st.selectbox("Seleccione Reunión para Asistencia:", options=reuniones, format_func=lambda x: f"{x['Fecha']} - {x['tema']}", key="sel_asist")
+            reunion_sel = st.selectbox("Seleccione Reunión:", options=reuniones, format_func=lambda x: f"{x['Fecha']} - {x['tema']}", key="sel_asist")
             
             if reunion_sel:
                 miembros = obtener_lista_miembros_simple()
@@ -107,16 +100,14 @@ def gestionar_reuniones():
                         st.write("Marque el estado de los miembros:")
                         for m in miembros:
                             c1, c2 = st.columns([3, 2])
-                            with c1:
-                                st.write(f"👤 {m['Nombre']}")
-                            with c2:
-                                estado = st.radio("Estado", ["Presente", "Ausente", "Excusado"], key=f"asist_{m['Id_miembro']}", label_visibility="collapsed", horizontal=True)
-                                datos_asistencia[m['Id_miembro']] = estado
+                            c1.write(f"👤 {m['Nombre']}")
+                            estado = c2.radio("Estado", ["Presente", "Ausente", "Excusado"], key=f"asist_{m['Id_miembro']}", horizontal=True, label_visibility="collapsed")
+                            datos_asistencia[m['Id_miembro']] = estado
                         
                         if st.form_submit_button("Guardar Asistencia"):
                             guardar_asistencia_bd(reunion_sel['Id_reunion'], datos_asistencia)
                 else:
-                    st.info("No hay miembros registrados.")
+                    st.warning("No hay miembros registrados.")
         else:
             st.info("No hay reuniones creadas.")
 
@@ -127,33 +118,27 @@ def gestionar_reuniones():
         
         if reuniones_ahorro:
             reunion_ahorro_sel = st.selectbox("Seleccione Reunión:", options=reuniones_ahorro, format_func=lambda x: f"{x['Fecha']} - {x['tema']}", key="sel_ahorro")
-            
             st.markdown("---")
-            col_izq, col_der = st.columns(2)
             
-            with col_izq:
-                miembros = obtener_lista_miembros_simple()
-                if miembros:
-                    dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
-                    miembro_ahorrador = st.selectbox("Miembro que ahorra:", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
-                else:
-                    miembro_ahorrador = None
-                    st.warning("No hay miembros.")
+            c1, c2 = st.columns(2)
+            miembros = obtener_lista_miembros_simple()
+            if miembros:
+                dict_miembros = {m['Id_miembro']: m['Nombre'] for m in miembros}
+                miembro_ahorrador = c1.selectbox("Miembro que ahorra:", options=dict_miembros.keys(), format_func=lambda x: dict_miembros[x])
+                monto = c2.number_input("Monto a Ahorrar ($)", min_value=0.0, step=0.01)
                 
-            with col_der:
-                monto = st.number_input("Monto a Ahorrar ($)", min_value=0.0, step=0.01)
-            
-            if st.button("Registrar Ahorro", type="primary"):
-                if miembro_ahorrador:
+                if st.button("Registrar Ahorro", type="primary"):
                     guardar_ahorro_bd(reunion_ahorro_sel['Id_reunion'], miembro_ahorrador, monto)
                 
-            st.markdown("#### 📊 Resumen de esta reunión")
-            ver_ahorros_reunion(reunion_ahorro_sel['Id_reunion'])
+                st.markdown("#### 📊 Resumen de esta reunión")
+                ver_ahorros_reunion(reunion_ahorro_sel['Id_reunion'])
+            else:
+                st.warning("Sin miembros.")
         else:
             st.info("Primero debe crear una reunión.")
 
 # ==========================================
-# SECCIÓN 3: CAJA Y PRÉSTAMOS
+# SECCIÓN 3: CAJA Y PRÉSTAMOS (CORREGIDO)
 # ==========================================
 
 def gestionar_caja_prestamos():
@@ -260,56 +245,45 @@ def gestionar_caja_prestamos():
         st.subheader("Movimientos de Caja")
         ver_movimientos_caja()
 
-
 # ==========================================
 # SECCIÓN 4: REPORTES
 # ==========================================
 
 def show_reports():
     st.header("📊 Reportes Consolidados")
-    
     conn = obtener_conexion()
-    if not conn:
-        st.error("No hay conexión con la base de datos.")
-        return
+    if not conn: return
 
     try:
         grupo_id = st.session_state.get('grupo_id')
         
-        # 1. CONSULTA GLOBAL (Saldo Caja Común)
+        # Globales
         df_global = pd.read_sql("SELECT Tipo_transaccion, Monto FROM Caja", conn)
-        
         saldo_global = 0.0
         if not df_global.empty:
             ing = df_global[df_global['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
             egr = df_global[df_global['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
-            saldo_global = ing - egr
+            
+            # Sumamos ahorros al saldo global para mostrar realidad
+            res_ahorro = pd.read_sql("SELECT SUM(Monto) FROM Ahorro", conn).iloc[0,0]
+            total_ahorros = float(res_ahorro) if res_ahorro else 0.0
+            saldo_global = total_ahorros + (ing - egr)
 
-        # 2. CONSULTA LOCAL (Historial del Grupo)
-        query_local = """
-            SELECT Fecha, Detalle, Tipo_transaccion, Monto 
-            FROM Caja 
-            WHERE Id_grupo = %s 
-            ORDER BY Fecha DESC
-        """
+        # Locales
+        query_local = "SELECT Fecha, Detalle, Tipo_transaccion, Monto FROM Caja WHERE Id_grupo = %s ORDER BY Fecha DESC"
         df_local = pd.read_sql(query_local, conn, params=(grupo_id,))
 
-        # --- VISUALIZACIÓN ---
         st.metric("💰 SALDO DISPONIBLE (Fondo Común)", f"${saldo_global:,.2f}")
         st.markdown("---")
 
         if not df_local.empty:
             st.subheader("📜 Historial de Movimientos de MI GRUPO")
-            
             if 'Fecha' in df_local.columns:
                 df_local['Fecha'] = pd.to_datetime(df_local['Fecha']).dt.date
             
-            # Flujo visual
             df_local['Flujo'] = df_local.apply(lambda x: x['Monto'] if x['Tipo_transaccion'] == 'Ingreso' else -x['Monto'], axis=1)
-            
             st.dataframe(df_local[['Fecha', 'Detalle', 'Tipo_transaccion', 'Monto']], use_container_width=True)
             st.bar_chart(df_local, x="Fecha", y="Flujo", color="Tipo_transaccion")
-            
         else:
             st.info("Este grupo aún no ha registrado movimientos.")
 
@@ -326,7 +300,6 @@ def obtener_conexion_safe():
     return obtener_conexion()
 
 # --- MIEMBROS ---
-
 def guardar_miembro_bd(nombre_completo, dui, telefono, direccion, rol_id):
     conn = obtener_conexion_safe()
     if conn:
@@ -349,7 +322,6 @@ def listar_miembros():
             grupo_id = st.session_state.get('grupo_id')
             query = "SELECT Id_miembro, Nombre, `DUI/Identificación`, Rol FROM Miembro WHERE Id_grupo = %s"
             df = pd.read_sql(query, conn, params=(grupo_id,))
-            
             if not df.empty:
                 st.dataframe(df, use_container_width=True)
                 with st.expander("🗑️ Eliminar Miembro"):
@@ -392,7 +364,6 @@ def obtener_lista_miembros_simple():
     return data
 
 # --- REUNIONES ---
-
 def crear_reunion_bd(fecha, tema):
     conn = obtener_conexion_safe()
     if conn:
@@ -429,7 +400,6 @@ def guardar_asistencia_bd(id_reunion, dict_asistencia):
             query = "INSERT INTO Asistencia (Id_reunion, Id_miembro, Estado) VALUES (%s, %s, %s)"
             vals = []
             multas = []
-            
             for id_m, est in dict_asistencia.items():
                 vals.append((id_reunion, id_m, est))
                 if est == "Ausente":
@@ -440,11 +410,11 @@ def guardar_asistencia_bd(id_reunion, dict_asistencia):
             cursor.executemany(query, vals)
             if multas:
                 cursor.executemany("INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, %s)", multas)
-            
             conn.commit()
             st.toast("Asistencia guardada.")
         except Exception as e:
-            st.error(f"Error: {e}")
+            if "1062" in str(e): st.error("Ya se tomó asistencia para esta reunión.")
+            else: st.error(f"Error: {e}")
         finally:
             conn.close()
 
@@ -453,7 +423,6 @@ def guardar_ahorro_bd(id_reunion, id_miembro, monto):
     if conn:
         try:
             cursor = conn.cursor()
-            # Asegúrate que la columna en BD se llame 'Fecha' o 'Fecha de registro' (recomendado 'Fecha')
             query = "INSERT INTO Ahorro (Id_reunion, Id_miembro, Monto, Fecha) VALUES (%s, %s, %s, NOW())"
             cursor.execute(query, (id_reunion, id_miembro, monto))
             conn.commit()
@@ -485,35 +454,32 @@ def ver_ahorros_reunion(id_reunion):
         finally:
             conn.close()
 
-# --- CAJA Y CRÉDITOS ---
+# --- CAJA Y CRÉDITOS (CORREGIDO) ---
 
 def calcular_saldo_disponible():
+    """
+    Calcula el saldo real: Total Ahorros + (Ingresos Caja - Egresos Caja)
+    """
     conn = obtener_conexion_safe()
     saldo = 0.0
     if conn:
         try:
             cursor = conn.cursor()
             
-            # Ahorros Totales
+            # 1. Total Ahorros (Capital)
             cursor.execute("SELECT SUM(Monto) FROM Ahorro")
             res = cursor.fetchone()
-            ahorros = res[0] if res and res[0] else 0.0
+            ahorros = float(res[0]) if res and res[0] else 0.0
 
-            # Caja Común (Ingreso - Egreso)
+            # 2. Flujo Neto Caja (Intereses, Multas - Préstamos)
             cursor.execute("SELECT Tipo_transaccion, Monto FROM Caja")
             movs = cursor.fetchall()
+            caja_neta = 0.0
+            for tipo, monto in movs:
+                if tipo == 'Ingreso': caja_neta += float(monto)
+                elif tipo == 'Egreso': caja_neta -= float(monto)
             
-            ingresos = sum(m[1] for m in movs if m[0] == 'Ingreso')
-            egresos = sum(m[1] for m in movs if m[0] == 'Egreso')
-            
-            saldo_caja = ingresos - egresos
-            
-            # Si no hay caja, usamos ahorros como base
-            if not movs and ahorros > 0:
-                saldo = ahorros
-            else:
-                saldo = saldo_caja # O saldo_caja + ahorros iniciales si no se migraron
-                
+            saldo = ahorros + caja_neta
         finally:
             conn.close()
     return saldo
@@ -541,20 +507,30 @@ def crear_prestamo_bd(id_miembro, monto, tasa, plazo, fecha):
         finally:
             conn.close()
 
-def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo):
+def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_original):
+    """Registra el pago y liquida el préstamo si se completa el capital"""
     conn = obtener_conexion_safe()
     if conn:
         try:
             cursor = conn.cursor()
             
-            # Registrar Pago
-            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha_pago) VALUES (%s, %s, %s, %s)"
+            # 1. Registrar Pago
+            q_p = "INSERT INTO Pagos (Id_prestamo, Monto_capital, Monto_interes, Fecha) VALUES (%s, %s, %s, %s)"
             cursor.execute(q_p, (id_prestamo, capital, interes, fecha))
             
-            # Ingreso Caja
+            # 2. Ingreso Caja
             total = capital + interes
             q_c = "INSERT INTO Caja (Id_grupo, Tipo_transaccion, Monto, Fecha, Detalle) VALUES (%s, 'Ingreso', %s, %s, %s)"
             cursor.execute(q_c, (id_grupo, total, fecha, f"Pago Préstamo {id_prestamo}"))
+            
+            # 3. VERIFICAR LIQUIDACIÓN
+            cursor.execute("SELECT SUM(Monto_capital) FROM Pagos WHERE Id_prestamo = %s", (id_prestamo,))
+            res = cursor.fetchone()
+            total_abonado = float(res[0]) if res and res[0] else 0.0
+            
+            if total_abonado >= (float(monto_original) - 0.1):
+                cursor.execute("UPDATE Prestamo SET Estado = 'Pagado' WHERE Id_prestamo = %s", (id_prestamo,))
+                st.toast("🎉 ¡Préstamo liquidado!")
             
             conn.commit()
             st.success("Pago registrado.")
@@ -586,10 +562,11 @@ def obtener_prestamos_activos():
 
 def aplicar_multa_bd(id_miembro, monto, motivo):
     conn = obtener_conexion_safe()
+    from datetime import datetime
     if conn:
         try:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado) VALUES (%s, %s, %s, 'Pendiente')", (id_miembro, monto, motivo))
+            cursor.execute("INSERT INTO Multa (Id_miembro, Monto, Motivo, Estado, Fecha) VALUES (%s, %s, %s, 'Pendiente', %s)", (id_miembro, monto, motivo, datetime.now()))
             conn.commit()
             st.toast("Multa creada.")
         except Exception as e:
