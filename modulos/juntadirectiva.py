@@ -187,38 +187,52 @@ def gestionar_caja_prestamos():
                 st.warning("No hay miembros registrados.")
 
        # --- PESTAÑA 2: REGISTRAR PAGO (LIQUIDACIÓN AUTOMÁTICA) ---
+   # --- PESTAÑA 2: REGISTRAR PAGO (LIQUIDACIÓN AUTOMÁTICA) ---
     with tab2:
         st.subheader("Cobro de Cuotas")
-        prestamos = obtener_prestamos_activos()
+        # Asegúrate de que esta función haga un JOIN con la tabla de miembros
+        # para poder obtener 'Nombre_Miembro', ya que en la tabla Prestamo solo tienes 'Id_miembro'
+        prestamos = obtener_prestamos_activos() 
         
         if prestamos:
             prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
+                # Nota: Asegúrate de que tu consulta SQL traiga el alias 'Nombre_Miembro'
                 format_func=lambda x: f"{x['Nombre_Miembro']} - Saldo Orig: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
             )
             
             st.markdown("---")
             c1, c2 = st.columns(2)
-            c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
+            # Usamos las llaves exactas de tu tabla Prestamo
+            c1.metric("Monto Original", f"${prestamo_sel['Monto']}") 
             c2.metric("Tasa Interés", f"{prestamo_sel['Interes']}%")
             
             with st.form("form_pago"):
                 c1, c2 = st.columns(2)
+                # Estas variables coincidirán con Monto_capital y Monto_interes
                 abono_capital = c1.number_input("Abono a Capital ($)", min_value=0.0)
                 pago_interes = c2.number_input("Pago de Interés ($)", min_value=0.0)
                 fecha_pago = st.date_input("Fecha de pago")
                 
+                # Opcional: Si quieres registrar multas, agrega un input, si no, lo mandamos en 0
+                # monto_multa = st.number_input("Multa", min_value=0.0) 
+
                 if st.form_submit_button("Registrar Pago"):
-                    # Pasamos el monto original para verificar si liquida
-                    registrar_pago_bd(
-                        prestamo_sel['Id_prestamo'], 
-                        abono_capital, 
-                        pago_interes, 
-                        fecha_pago, 
-                        prestamo_sel['Id_grupo'],
-                        prestamo_sel['Monto'] # Monto original para comparar
-                    )
+                    try:
+                        # CORRECCIÓN PRINCIPAL AQUÍ:
+                        registrar_pago_bd(
+                            id_prestamo=prestamo_sel['Id_prestamo'], 
+                            monto_capital=abono_capital, 
+                            monto_interes=pago_interes, 
+                            fecha_pago=fecha_pago, 
+                            id_multa=0,  # Enviamos 0 o None porque la tabla Pagos lo pide
+                            monto_original=prestamo_sel['Monto'] # Para lógica de validación
+                        )
+                        st.success("Pago registrado correctamente")
+                        st.rerun() # Recargar la página para actualizar saldos
+                    except Exception as e:
+                        st.error(f"Error al registrar: {e}")
         else:
             st.info("No hay préstamos activos.")
          
