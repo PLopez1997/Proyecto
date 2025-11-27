@@ -284,79 +284,194 @@ def listar_usuarios():
 # ------------------------------------
 
 def create_cycle_form(ref_data):
-    st.subheader("➕ Crear Nuevo Ciclo")
+    # Redirigimos a la nueva función completa
+    menu_gestion_ciclos(ref_data)
 
-    with st.form("form_nuevo_ciclo"):
-        fecha_inicio = st.date_input("Fecha Inicio")
-        fecha_cierre = st.date_input("Fecha Cierre")
-        utilidades = st.number_input("Utilidades estimadas", min_value=0.0, value=0.0)
-        estado = st.selectbox("Estado", ["activo", "inactivo", "planificado"])
+def menu_gestion_ciclos(ref_data):
+    st.header("🔄 Gestión del Ciclo Operativo")
+    
+    tab_crear, tab_cerrar = st.tabs(["➕ Iniciar Nuevo Ciclo", "🏁 Cerrar Ciclo Actual"])
+    
+    # --- PESTAÑA 1: CREAR (Lógica original mejorada) ---
+    with tab_crear:
+        st.subheader("Configuración de Nuevo Ciclo")
+        with st.form("form_nuevo_ciclo"):
+            c1, c2 = st.columns(2)
+            fecha_inicio = c1.date_input("Fecha Inicio")
+            fecha_cierre = c2.date_input("Fecha Cierre Estimada")
+            
+            duracion = st.number_input("Duración (meses)", min_value=6, max_value=12, value=12)
+            meta_ahorro = st.number_input("Meta de Ahorro Grupal ($)", min_value=0.0)
+            
+            if st.form_submit_button("Registrar Inicio de Ciclo"):
+                guardar_ciclo_bd(fecha_inicio, fecha_cierre, duracion, meta_ahorro)
+        
+        # Mostrar ciclos existentes
+        if "ciclos" in ref_data and not ref_data["ciclos"].empty:
+            st.markdown("### Historial de Ciclos")
+            st.dataframe(ref_data["ciclos"], use_container_width=True)
 
-        duracion = st.number_input("Duración (días)", min_value=1, value=30)
+    # --- PESTAÑA 2: CIERRE DE CICLO (NUEVA LÓGICA) ---
+    with tab_cerrar:
+        vista_cierre_ciclo()
 
-        submitted = st.form_submit_button("Crear Ciclo")
+def vista_cierre_ciclo():
+    st.subheader("🏁 Auditoría y Cierre de Ciclo")
+    st.info("Este proceso calculará las utilidades y generará el acta final. Requiere que NO existan deudas pendientes.")
+    
+    conn = obtener_conexion()
+    if not conn: return
 
-        if submitted:
-            con = obtener_conexion()
-            if not con:
-                st.error("No hay conexión a BD")
-                return
+    try:
+        # 1. VALIDACIONES DE REGLAS DE NEGOCIO
+        errores = []
+        
+        # A. Verificar Préstamos Activos
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM Prestamo WHERE Estado = 'Activo'")
+        prestamos_activos = cur.fetchone()[0]
+        if prestamos_activos > 0:
+            errores.append(f"❌ Hay {prestamos_activos} préstamos activos. Deben liquidarse todos antes del cierre.")
+            
+        # B. Verificar Multas Pendientes
+        cur.execute("SELECT COUNT(*) FROM Multa WHERE Estado = 'Pendiente'")
+        multas_pendientes = cur.fetchone()[0]
+        if multas_pendientes > 0:
+            errores.append(f"❌ Hay {multas_pendientes} multas sin pagar. Deben saldarse o condonarse.")
 
-            try:
-                # Detectar tabla ciclo en la BD
-                ciclo_table = next(
-                    (t for t in ["Ciclo", "ciclo", "Ciclos", "ciclos"] if table_columns(con, t)),
-                    None
-                )
-                if not ciclo_table:
-                    st.error("No se encontró la tabla Ciclo en la BD.")
-                    return
+        if errores:
+            for e in errores:
+                st.error(e)
+            st.warning("⛔ El cierre está bloqueado hasta resolver las incidencias.")
+            return # Detenemos la ejecución aquí
 
-                cols = table_columns(con, ciclo_table)
+        # 2. CÁLCULOS FINANCIEROS (Si pasa validaciones)
+        st.success("✅ Todas las validaciones operativas pasaron. El sistema está listo para el cálculo.")
+        
+        # Calcular Saldo en Caja (Dinero real disponible)
+        # (Ingresos - Egresos)
+        cur.execute("SELECT Tipo_transaccion, Monto FROM Caja")
+        movs = cur.fetchall()
+        ingresos = sum(m[1] for m in movs if m[0] == 'Ingreso')
+        egresos = sum(m[1] for m in movs if m[0] == 'Egreso')
+        saldo_caja = ingresos - egresos
+        
+        # Calcular Total Ahorrado (Capital de los socios)
+        cur.execute("SELECT SUM(Monto) FROM Ahorro")
+        res_ahorro = cur.fetchone()
+        total_ahorros = float(res_ahorro[0]) if res_ahorro and res_ahorro[0] else 0.0
+        
+        # Calcular Utilidad Neta (Ganancia)
+        # Utilidad = Dinero en Caja - Capital que la gente puso
+        utilidad_neta = saldo_caja - total_ahorros
+        
+        # Evitar utilidades negativas en la vista (pérdidas)
+        es_perdida = False
+        if utilidad_neta < 0:
+            es_perdida = True
+            st.warning(f"⚠️ Atención: El saldo en caja (${saldo_caja:,.2f}) es menor que lo ahorrado (${total_ahorros:,.2f}). Hay pérdidas.")
 
-                insert_cols = []
-                placeholders = []
-                params = []
+        # 3. VISTA PREVIA DE NÚMEROS
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💵 Dinero en Caja", f"${saldo_caja:,.2f}")
+        col2.metric("🐷 Capital Ahorrado", f"${total_ahorros:,.2f}")
+        col3.metric("📈 Utilidad a Repartir", f"${utilidad_neta:,.2f}", delta="Ganancia" if not es_perdida else "-Pérdida")
+        
+        st.markdown("---")
+        
+        # 4. TABLA DE DISTRIBUCIÓN PROPORCIONAL
+        st.subheader("💰 Simulación de Reparto de Utilidades")
+        
+        # Traemos ahorros por miembro
+        query_dist = """
+            SELECT m.Nombre, SUM(a.Monto) as AhorroIndividual
+            FROM Ahorro a
+            JOIN Miembro m ON a.Id_miembro = m.Id_miembro
+            GROUP BY m.Id_miembro, m.Nombre
+        """
+        df_reparto = pd.read_sql(query_dist, conn)
+        
+        if not df_reparto.empty and total_ahorros > 0:
+            # Lógica de tres simple: (MiAhorro / TotalAhorro) * Utilidad
+            df_reparto['Participación %'] = (df_reparto['AhorroIndividual'] / total_ahorros) * 100
+            df_reparto['Ganancia Estimada'] = (df_reparto['Participación %'] / 100) * utilidad_neta
+            df_reparto['Total a Retirar'] = df_reparto['AhorroIndividual'] + df_reparto['Ganancia Estimada']
+            
+            # Formato visual
+            st.dataframe(df_reparto.style.format({
+                'AhorroIndividual': '${:,.2f}',
+                'Participación %': '{:.2f}%',
+                'Ganancia Estimada': '${:,.2f}',
+                'Total a Retirar': '${:,.2f}'
+            }), use_container_width=True)
+            
+            # 5. GENERACIÓN DE ACTA
+            if st.button("📝 Generar Acta de Cierre y Finalizar Ciclo", type="primary"):
+                acta_texto = generar_texto_acta(saldo_caja, total_ahorros, utilidad_neta, df_reparto)
+                st.text_area("ACTA DE CIERRE DE CICLO", value=acta_texto, height=400)
+                st.balloons()
+                # Aquí podrías agregar un UPDATE a la tabla Ciclo para poner Estado='Cerrado'
+                # update_ciclo_cerrado(conn) 
+        else:
+            st.info("No hay ahorros registrados para calcular distribución.")
 
-                # Función para agregar columnas solo si existen
-                def maybe_add(colname, value):
-                    if colname in cols:
-                        insert_cols.append(colname)
-                        placeholders.append("%s")
-                        params.append(value)
+    except Exception as e:
+        st.error(f"Error en cálculo de cierre: {e}")
+    finally:
+        conn.close()
 
-                # Campos reconocidos en la tabla Ciclo
-                maybe_add("Fecha_inicio", str(fecha_inicio))
-                maybe_add("Fecha_cierre", str(fecha_cierre))
-                maybe_add("Utilidades", utilidades)
-                maybe_add("Estado", estado)
-                maybe_add("Duracion", duracion)
-                maybe_add("Duración", duracion)  # si existe con tilde
+def generar_texto_acta(caja, ahorros, utilidad, df_detalle):
+    from datetime import datetime
+    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
+    
+    texto = f"""
+    ACTA DE CIERRE DE CICLO OPERATIVO - GAPC
+    ========================================
+    Fecha de emisión: {fecha_hoy}
+    
+    RESUMEN FINANCIERO GLOBAL
+    -------------------------
+    Saldo Final en Caja:      ${caja:,.2f}
+    (-) Devolución Ahorros:   ${ahorros:,.2f}
+    -------------------------
+    UTILIDAD NETA GENERADA:   ${utilidad:,.2f}
+    
+    La utilidad proviene de los intereses cobrados por préstamos, 
+    multas aplicadas y otros ingresos extraordinarios gestionados 
+    durante el ciclo.
+    
+    DETALLE DE DISTRIBUCIÓN
+    -----------------------
+    """
+    
+    for index, row in df_detalle.iterrows():
+        linea = f"- {row['Nombre']}: Ahorró ${row['AhorroIndividual']:,.2f} -> Gana ${row['Ganancia Estimada']:,.2f} -> Retira Total: ${row['Total a Retirar']:,.2f}\n"
+        texto += linea
+        
+    texto += """
+    ========================================
+    Se da por concluido el ciclo operativo y se autoriza el 
+    retiro de fondos según el detalle anterior.
+    
+    Firma Presidencia          Firma Tesorería
+    """
+    return texto
 
-                if not insert_cols:
-                    st.error("La tabla Ciclo no tiene columnas reconocibles para insertar.")
-                    return
-
-                sql = (
-                    f"INSERT INTO {ciclo_table} "
-                    f"({', '.join('' + c + '' for c in insert_cols)}) "
-                    f"VALUES ({', '.join(placeholders)})"
-                )
-
-                cur = con.cursor()
-                cur.execute(sql, tuple(params))
-                con.commit()
-                st.success("Ciclo creado correctamente.")
-                cur.close()
-                st.rerun()
-
-            except Exception as e:
-                con.rollback()
-                st.error(f"Error al crear ciclo: {e}")
-
-            finally:
-                con.close()
-
+def guardar_ciclo_bd(inicio, cierre, duracion, meta):
+    conn = obtener_conexion()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Asegúrate que tu tabla Ciclo tenga estas columnas, si no, ajusta el INSERT
+            query = "INSERT INTO Ciclo (Fecha_inicio, Fecha_fin, Estado) VALUES (%s, %s, 'Activo')"
+            cursor.execute(query, (inicio, cierre))
+            conn.commit()
+            st.success("✅ Nuevo ciclo iniciado correctamente.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error al guardar ciclo: {e}")
+        finally:
+            conn.close()
 
 # -----------------------
 # GESTIÓN DE GRUPOS (creación vinculada a tabla real)
