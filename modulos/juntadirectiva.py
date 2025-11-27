@@ -195,7 +195,7 @@ def gestionar_caja_prestamos():
             prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
-                format_func=lambda x: f"{x['Nombre_Miembro']} - Original: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
+                format_func=lambda x: f"{x['Nombre_Miembro']} - Original: ${x['Monto_capital']} (Fecha: {x['Fecha_pago']})"
             )
             
             # --- CÁLCULO DE SALDO PENDIENTE ---
