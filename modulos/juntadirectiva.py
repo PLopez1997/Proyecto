@@ -194,18 +194,30 @@ def gestionar_caja_prestamos():
             prestamo_sel = st.selectbox(
                 "Seleccione Préstamo:", 
                 options=prestamos,
-                format_func=lambda x: f"{x['Nombre_Miembro']} - Saldo Orig: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
+                format_func=lambda x: f"{x['Nombre_Miembro']} - Original: ${x['Monto']} (Fecha: {x['Fecha_inicio']})"
             )
             
-            st.markdown("---")
-            c1, c2 = st.columns(2)
-            c1.metric("Monto Original", f"${prestamo_sel['Monto']}")
-            c2.metric("Tasa Interés", f"{prestamo_sel['Interes']}%")
+            # --- CÁLCULO DE SALDO PENDIENTE ---
+            amortizado = obtener_amortizado_prestamo(prestamo_sel['Id_prestamo'])
+            deuda_original = float(prestamo_sel['Monto'])
+            saldo_pendiente_capital = deuda_original - amortizado
             
+            st.markdown("---")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Monto Original", f"${deuda_original:,.2f}")
+            c2.metric("Ya Amortizado", f"${amortizado:,.2f}")
+            c3.metric("📉 Saldo Pendiente (Capital)", f"${saldo_pendiente_capital:,.2f}", delta_color="inverse")
+            
+            # Aviso visual
+            if saldo_pendiente_capital <= 0:
+                st.success("✅ ¡Este préstamo ya cubrió su capital! Debería estar liquidado.")
+            else:
+                st.info(f"💡 Para liquidar este préstamo, ingrese un Abono a Capital de al menos: ${saldo_pendiente_capital:,.2f}")
+
             with st.form("form_pago"):
                 c1, c2 = st.columns(2)
-                abono_capital = c1.number_input("Abono a Capital ($)", min_value=0.0)
-                pago_interes = c2.number_input("Pago de Interés ($)", min_value=0.0)
+                abono_capital = c1.number_input("Abono a Capital ($)", min_value=0.0, step=1.0)
+                pago_interes = c2.number_input("Pago de Interés ($)", min_value=0.0, step=1.0)
                 fecha_pago = st.date_input("Fecha de pago")
                 
                 if st.form_submit_button("Registrar Pago"):
@@ -220,7 +232,7 @@ def gestionar_caja_prestamos():
                     )
         else:
             st.info("No hay préstamos activos.")
-
+            
     # --- PESTAÑA 3: MULTAS ---
     with tab3:
         st.subheader("Gestión de Multas")
