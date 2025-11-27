@@ -525,54 +525,44 @@ def registrar_pago_bd(id_prestamo, capital, interes, fecha, id_grupo, monto_orig
         finally:
             conn.close()
 
-#---------------
-#REPORTE
-    
+# ==========================================
+# SECCIÓN 4: REPORTES
+# ==========================================
+
 def show_reports():
     st.header("📊 Reportes Consolidados")
-    
     conn = obtener_conexion()
-    if not conn:
-        st.error("No hay conexión con la base de datos.")
-        return
+    if not conn: return
 
     try:
         grupo_id = st.session_state.get('grupo_id')
         
-        # 1. CONSULTA GLOBAL (Saldo Caja Común)
+        # Globales
         df_global = pd.read_sql("SELECT Tipo_transaccion, Monto FROM Caja", conn)
-        
         saldo_global = 0.0
         if not df_global.empty:
             ing = df_global[df_global['Tipo_transaccion'] == 'Ingreso']['Monto'].sum()
             egr = df_global[df_global['Tipo_transaccion'] == 'Egreso']['Monto'].sum()
-            saldo_global = ing - egr
+            
+            res_ahorro = pd.read_sql("SELECT SUM(Monto) FROM Ahorro", conn).iloc[0,0]
+            total_ahorros = float(res_ahorro) if res_ahorro else 0.0
+            saldo_global = total_ahorros + (ing - egr)
 
-        # 2. CONSULTA LOCAL (Historial del Grupo)
-        query_local = """
-            SELECT Fecha, Detalle, Tipo_transaccion, Monto 
-            FROM Caja 
-            WHERE Id_grupo = %s 
-            ORDER BY Fecha DESC
-        """
+        # Locales
+        query_local = "SELECT Fecha, Detalle, Tipo_transaccion, Monto FROM Caja WHERE Id_grupo = %s ORDER BY Fecha DESC"
         df_local = pd.read_sql(query_local, conn, params=(grupo_id,))
 
-        # --- VISUALIZACIÓN ---
         st.metric("💰 SALDO DISPONIBLE (Fondo Común)", f"${saldo_global:,.2f}")
         st.markdown("---")
 
         if not df_local.empty:
             st.subheader("📜 Historial de Movimientos de MI GRUPO")
-            
             if 'Fecha' in df_local.columns:
                 df_local['Fecha'] = pd.to_datetime(df_local['Fecha']).dt.date
             
-            # Flujo visual
             df_local['Flujo'] = df_local.apply(lambda x: x['Monto'] if x['Tipo_transaccion'] == 'Ingreso' else -x['Monto'], axis=1)
-            
             st.dataframe(df_local[['Fecha', 'Detalle', 'Tipo_transaccion', 'Monto']], use_container_width=True)
             st.bar_chart(df_local, x="Fecha", y="Flujo", color="Tipo_transaccion")
-            
         else:
             st.info("Este grupo aún no ha registrado movimientos.")
 
