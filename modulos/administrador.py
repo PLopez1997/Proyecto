@@ -484,6 +484,7 @@ def guardar_ciclo_bd(inicio, cierre, estado):
             st.error(f"Error al guardar ciclo: {e}")
         finally:
             conn.close()
+            
 # -----------------------
 # GESTIÓN DE GRUPOS (creación vinculada a tabla real)
 # -----------------------
